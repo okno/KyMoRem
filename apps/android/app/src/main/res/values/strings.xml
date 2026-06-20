@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">KyMoRem</string>
+    <string name="summary">Share mouse and keyboard across devices on the same network.</string>
+    <string name="host_hint">Host address</string>
+    <string name="token_hint">Pairing token</string>
+    <string name="connect">Connect</string>
+    <string name="mvp_status">Android MVP shell ready. Network protocol wiring comes next.</string>
+    <string name="pairing_placeholder">Pairing UI ready. TCP client implementation is the next milestone.</string>
+</resources>

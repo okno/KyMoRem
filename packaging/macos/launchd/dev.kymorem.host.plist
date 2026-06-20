@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.kymorem.host</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/KyMoRem.app/Contents/MacOS/kymorem-agent</string>
+    <string>host</string>
+    <string>--token</string>
+    <string>kymorem-local-default-change-me</string>
+  </array>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/kymorem-host.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/kymorem-host.err</string>
+</dict>
+</plist>

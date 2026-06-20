@@ -1,0 +1,19 @@
+{
+  "id": "kymorem",
+  "name": "KyMoRem",
+  "displayName": "KyMoRem - Keyboard Mouse Remote",
+  "version": "0.1.0",
+  "vendor": "okno",
+  "description": "LAN keyboard and pointer sharing for Windows, macOS, Linux and Android.",
+  "homepage": "https://github.com/okno/KyMoRem",
+  "defaultPort": 54865,
+  "serviceName": "kymorem-agent",
+  "binaryName": "kymorem-agent",
+  "primaryLocale": "it-IT",
+  "locales": [
+    "it-IT",
+    "en-US",
+    "ch-CH"
+  ],
+  "theme": "cyber-noir"
+}

@@ -1,0 +1,18 @@
+{
+  "locale": "ch-CH",
+  "languageName": "Schweiz",
+  "appName": "KyMoRem",
+  "tagline": "Keyboard Mouse Remote",
+  "summary": "Tastatur und Maus im lokalen Netzwerk gemeinsam nutzen.",
+  "installerWelcome": "Willkommen beim KyMoRem Installer.",
+  "installerDescription": "KyMoRem verbindet Computer und externe Geraete im LAN, damit sie mit einer Tastatur und einem Zeiger bedient werden koennen.",
+  "installAction": "KyMoRem installieren",
+  "uninstallAction": "KyMoRem entfernen",
+  "launchAction": "KyMoRem starten",
+  "hostMode": "Host-Modus",
+  "deviceMode": "Geraete-Modus",
+  "pairingToken": "Pairing-Token",
+  "securityNotice": "Produktivbetrieb nur mit eigenem Token und geschuetztem LAN.",
+  "finishMessage": "KyMoRem ist bereit.",
+  "uninstallMessage": "KyMoRem wurde entfernt."
+}

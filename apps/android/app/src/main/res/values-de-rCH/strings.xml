@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">KyMoRem</string>
+    <string name="summary">Tastatur und Maus im lokalen Netzwerk gemeinsam nutzen.</string>
+    <string name="host_hint">Host-Adresse</string>
+    <string name="token_hint">Pairing-Token</string>
+    <string name="connect">Verbinden</string>
+    <string name="mvp_status">Android MVP Shell bereit. Die Protokollanbindung ist der naechste Meilenstein.</string>
+    <string name="pairing_placeholder">Pairing UI bereit. Die TCP Client-Implementierung folgt als naechster Schritt.</string>
+</resources>

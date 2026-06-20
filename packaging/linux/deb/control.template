@@ -1,0 +1,11 @@
+Package: kymorem
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: @ARCH@
+Maintainer: okno <okno@users.noreply.github.com>
+Homepage: https://github.com/okno/KyMoRem
+Depends: libc6
+Description: KyMoRem - Keyboard Mouse Remote
+ LAN keyboard and pointer sharing for Windows, macOS, Linux and Android.
+ Italian is the primary installer language; English and CH are included.

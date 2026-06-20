@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">KyMoRem</string>
+    <string name="summary">Condividi mouse e tastiera tra dispositivi sulla stessa rete.</string>
+    <string name="host_hint">Indirizzo host</string>
+    <string name="token_hint">Token di abbinamento</string>
+    <string name="connect">Connetti</string>
+    <string name="mvp_status">Base Android pronta. Il collegamento al protocollo di rete e il prossimo passo.</string>
+    <string name="pairing_placeholder">Interfaccia di abbinamento pronta. Il client TCP e il prossimo milestone.</string>
+</resources>

@@ -1,0 +1,19 @@
+{
+  "id": "synthwave-night",
+  "name": "Synthwave Night",
+  "description": "A brighter neon theme for demo builds and visible control rooms.",
+  "colors": {
+    "background": "#090015",
+    "backgroundRaised": "#12062b",
+    "panel": "#170a33",
+    "panelRaised": "#211047",
+    "line": "#372461",
+    "text": "#fff8ff",
+    "mutedText": "#c9b7dd",
+    "accent": "#26f7ff",
+    "accentSecondary": "#ff3df2",
+    "success": "#c6ff3d",
+    "warning": "#ffd166",
+    "danger": "#ff4d88"
+  }
+}

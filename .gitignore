@@ -1,0 +1,92 @@
+# KyMoRem repository ignore rules
+
+# Build output and release payloads
+/target/
+/build/
+/dist/
+/artifacts/
+/release/
+/out/
+*.exe
+*.msi
+*.deb
+*.rpm
+*.dmg
+*.pkg
+*.AppImage
+*.tar
+*.tar.gz
+*.zip
+*.7z
+*.sha256
+SHA256SUMS*
+
+# Rust
+**/*.rs.bk
+
+# Python runtime and packaging
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.spec
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+captures/
+*.apk
+*.aab
+
+# Node / web tooling
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local configuration, credentials, and machine-specific data
+.env
+.env.*
+*.local
+*.local.toml
+*.local.json
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+config.local.*
+runtime-config.json
+
+# Logs and diagnostics
+*.log
+logs/
+debug/
+*.tmp
+*.temp
+*.pid
+
+# Editors and OS metadata
+/.idea/
+/.vscode/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local installer caches
+*.cab
+*.wixpdb
+*.msix

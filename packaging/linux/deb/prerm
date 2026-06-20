@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user stop kymorem-host.service >/dev/null 2>&1 || true
+  systemctl --user disable kymorem-host.service >/dev/null 2>&1 || true
+fi
+
+echo "KyMoRem is being removed."

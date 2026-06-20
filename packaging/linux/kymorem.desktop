@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=KyMoRem Host
+Comment=Share keyboard and mouse across LAN devices
+Comment[it]=Condividi mouse e tastiera tra dispositivi in LAN
+Comment[de_CH]=Tastatur und Maus zwischen LAN-Geraeten teilen
+Exec=sh -c 'kymorem-agent host --token "${KYMOREM_TOKEN:-kymorem-local-default-change-me}"'
+Terminal=true
+Categories=Network;Utility;
+StartupNotify=false

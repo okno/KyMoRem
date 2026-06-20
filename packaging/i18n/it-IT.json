@@ -1,0 +1,18 @@
+{
+  "locale": "it-IT",
+  "languageName": "Italiano",
+  "appName": "KyMoRem",
+  "tagline": "Keyboard Mouse Remote",
+  "summary": "Condividi mouse e tastiera tra dispositivi sulla stessa rete.",
+  "installerWelcome": "Benvenuto nell'installazione di KyMoRem.",
+  "installerDescription": "KyMoRem collega computer e dispositivi Android in LAN per controllarli con una sola tastiera e un solo puntatore.",
+  "installAction": "Installa KyMoRem",
+  "uninstallAction": "Disinstalla KyMoRem",
+  "launchAction": "Avvia KyMoRem",
+  "hostMode": "Modalita host",
+  "deviceMode": "Modalita dispositivo",
+  "pairingToken": "Token di abbinamento",
+  "securityNotice": "Usa KyMoRem solo su reti fidate finche la cifratura non sara abilitata.",
+  "finishMessage": "KyMoRem e pronto.",
+  "uninstallMessage": "KyMoRem e stato rimosso."
+}

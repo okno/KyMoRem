@@ -1,0 +1,2 @@
+CFBundleDisplayName = "KyMoRem";
+NSAppleEventsUsageDescription = "KyMoRem usa eventi locali per condividere tastiera e puntatore tra dispositivi autorizzati.";

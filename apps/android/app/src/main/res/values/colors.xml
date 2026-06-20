@@ -1,0 +1,6 @@
+<resources>
+    <color name="kymorem_bg">#0b1020</color>
+    <color name="kymorem_panel">#11182a</color>
+    <color name="kymorem_text">#f4f7fb</color>
+    <color name="kymorem_accent">#19d3da</color>
+</resources>

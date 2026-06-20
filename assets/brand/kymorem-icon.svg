@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">KyMoRem icon</title>
+  <desc id="desc">A stylized keyboard, pointer path, and remote screen mark.</desc>
+  <defs>
+    <linearGradient id="edge" x1="22" y1="30" x2="226" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#19d3da"/>
+      <stop offset="0.55" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#39e58c"/>
+    </linearGradient>
+  </defs>
+  <rect x="18" y="20" width="220" height="216" rx="32" fill="#0b1020"/>
+  <path d="M54 70h100c15 0 27 12 27 27v58c0 15-12 27-27 27H54c-15 0-27-12-27-27V97c0-15 12-27 27-27Z" fill="#11182a" stroke="url(#edge)" stroke-width="6"/>
+  <path d="M174 88h28c15 0 27 12 27 27v44c0 15-12 27-27 27h-28" fill="none" stroke="#19d3da" stroke-width="8" stroke-linecap="round"/>
+  <path d="M70 112h14M100 112h14M130 112h14M70 142h54M138 142h14" stroke="#f4f7fb" stroke-width="9" stroke-linecap="round"/>
+  <path d="M152 158l43 45 8-27 27-8-43-43-10 32-25 1Z" fill="#f4f7fb" stroke="#0b1020" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M60 54c28-22 73-24 105-4" fill="none" stroke="#39e58c" stroke-width="8" stroke-linecap="round"/>
+</svg>

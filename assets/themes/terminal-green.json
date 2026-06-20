@@ -1,0 +1,19 @@
+{
+  "id": "terminal-green",
+  "name": "Terminal Green",
+  "description": "Low-noise operator theme inspired by serial consoles and NOC dashboards.",
+  "colors": {
+    "background": "#020604",
+    "backgroundRaised": "#06100b",
+    "panel": "#08140e",
+    "panelRaised": "#0c1d14",
+    "line": "#183323",
+    "text": "#e8fff0",
+    "mutedText": "#8eb99c",
+    "accent": "#40ff88",
+    "accentSecondary": "#7affc8",
+    "success": "#b8ff5a",
+    "warning": "#ffe45e",
+    "danger": "#ff4f6d"
+  }
+}

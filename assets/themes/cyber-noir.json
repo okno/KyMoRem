@@ -1,0 +1,27 @@
+{
+  "id": "cyber-noir",
+  "name": "Cyber Noir",
+  "description": "A restrained cyber console theme: deep black, cyan routing, magenta status, acid online state.",
+  "colors": {
+    "background": "#04060c",
+    "backgroundRaised": "#070b16",
+    "panel": "#0b1020",
+    "panelRaised": "#11162a",
+    "line": "#1c2b46",
+    "text": "#f7fbff",
+    "mutedText": "#8ea4c8",
+    "accent": "#00f5ff",
+    "accentSecondary": "#ff2bd6",
+    "success": "#b7ff2a",
+    "warning": "#ffe45e",
+    "danger": "#ff3864"
+  },
+  "typography": {
+    "ui": "Segoe UI",
+    "mono": "Consolas"
+  },
+  "radii": {
+    "small": 0,
+    "medium": 0
+  }
+}

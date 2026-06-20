@@ -1,0 +1,12 @@
+[Unit]
+Description=KyMoRem Host Agent
+After=network-online.target
+
+[Service]
+Environment=KYMOREM_TOKEN=kymorem-local-default-change-me
+ExecStart=/usr/bin/kymorem-agent host --token ${KYMOREM_TOKEN}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

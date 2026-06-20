@@ -1,0 +1,21 @@
+{
+  "id": "stellar-dark",
+  "name": "Stellar Dark",
+  "description": "Legacy dark installer and app theme with cyan, violet, and signal green accents.",
+  "colors": {
+    "background": "#0b1020",
+    "panel": "#11182a",
+    "panelRaised": "#172033",
+    "text": "#f4f7fb",
+    "mutedText": "#b8c2d6",
+    "accent": "#19d3da",
+    "accentSecondary": "#a855f7",
+    "success": "#39e58c",
+    "warning": "#f7c948",
+    "danger": "#ff5c7a"
+  },
+  "radii": {
+    "small": 6,
+    "medium": 8
+  }
+}

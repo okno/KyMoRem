@@ -1,0 +1,2 @@
+CFBundleDisplayName = "KyMoRem";
+NSAppleEventsUsageDescription = "KyMoRem uses local events to share keyboard and pointer input across your devices.";

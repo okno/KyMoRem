@@ -1,0 +1,35 @@
+:root {
+  color-scheme: dark;
+  --kymorem-bg: #0b1020;
+  --kymorem-panel: #11182a;
+  --kymorem-panel-raised: #172033;
+  --kymorem-text: #f4f7fb;
+  --kymorem-muted: #b8c2d6;
+  --kymorem-accent: #19d3da;
+  --kymorem-accent-secondary: #a855f7;
+  --kymorem-success: #39e58c;
+  --kymorem-warning: #f7c948;
+  --kymorem-danger: #ff5c7a;
+  --kymorem-radius: 8px;
+}
+
+body {
+  margin: 0;
+  background: var(--kymorem-bg);
+  color: var(--kymorem-text);
+  font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+.kymorem-shell {
+  background: linear-gradient(135deg, #0b1020 0%, #11182a 58%, #151338 100%);
+}
+
+.kymorem-panel {
+  background: var(--kymorem-panel);
+  border: 1px solid rgba(244, 247, 251, 0.12);
+  border-radius: var(--kymorem-radius);
+}
+
+.kymorem-accent {
+  color: var(--kymorem-accent);
+}

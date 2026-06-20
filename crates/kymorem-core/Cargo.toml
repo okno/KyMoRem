@@ -1,0 +1,12 @@
+[package]
+name = "kymorem-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "KyMoRem layout and routing logic."
+
+[dependencies]
+kymorem-protocol = { path = "../kymorem-protocol" }
+serde.workspace = true
+thiserror.workspace = true

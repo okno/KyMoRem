@@ -1,0 +1,18 @@
+# Example future layout. The Rust MVP currently models this in code; TOML
+# loading is intentionally left for the GUI/config phase.
+
+[[screens]]
+id = "desk"
+name = "Main desktop"
+x = 0
+y = 0
+width = 1920
+height = 1080
+
+[[screens]]
+id = "android-tablet"
+name = "Android tablet"
+x = 1920
+y = 120
+width = 1200
+height = 800

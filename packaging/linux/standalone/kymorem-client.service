@@ -1,0 +1,17 @@
+[Unit]
+Description=KyMoRem standalone client
+After=graphical-session.target network-online.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+Environment=KYMOREM_BIND=0.0.0.0
+Environment=KYMOREM_PORT=54865
+Environment=KYMOREM_TOKEN=kymorem-local-default-change-me
+ExecStart=@APP_DIR@/run-client.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
