@@ -22,6 +22,11 @@ Example:
     "preferred_suite": "ml-kem-768+psk-hkdf-sha256+aes-256-gcm",
     "fallback_suite": "psk-hkdf-sha256+aes-256-gcm"
   },
+  "clipboard": {
+    "enabled": false,
+    "max_bytes": 1048576,
+    "text_only": true
+  },
   "discovery": {
     "enabled": true,
     "auto_connect": true,
@@ -50,6 +55,10 @@ Example:
 ```
 
 Restart KyMoRem after editing.
+
+The placeholder `kymorem-local-default-change-me` is a development marker, not
+a deployment secret. The runtime refuses it unless
+`KYMOREM_ALLOW_DEFAULT_TOKEN=1` is set for diagnostics.
 
 ## Linux Client
 
@@ -86,4 +95,4 @@ en  English
 ch  Swiss slot
 ```
 
-No other localization files are part of the v0.1.0 public package.
+No other localization files are part of the v0.1.1 public package.

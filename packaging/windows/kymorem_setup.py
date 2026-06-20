@@ -11,12 +11,16 @@ def resource_path(name: str) -> Path:
     return base / name
 
 
+def ps_literal(value: Path | str) -> str:
+    return str(value).replace("'", "''")
+
+
 def shortcut(path: Path, target: Path, working_dir: Path) -> None:
     ps = f"""
 $ws = New-Object -ComObject WScript.Shell
-$s = $ws.CreateShortcut('{str(path)}')
-$s.TargetPath = '{str(target)}'
-$s.WorkingDirectory = '{str(working_dir)}'
+$s = $ws.CreateShortcut('{ps_literal(path)}')
+$s.TargetPath = '{ps_literal(target)}'
+$s.WorkingDirectory = '{ps_literal(working_dir)}'
 $s.Description = 'KyMoRem Keyboard Mouse Remote'
 $s.Save()
 """
@@ -42,6 +46,11 @@ def main() -> int:
             "required": True,
             "preferred_suite": "ml-kem-768+psk-hkdf-sha256+aes-256-gcm",
             "fallback_suite": "psk-hkdf-sha256+aes-256-gcm",
+        },
+        "clipboard": {
+            "enabled": False,
+            "max_bytes": 1048576,
+            "text_only": True,
         },
         "discovery": {
             "enabled": True,

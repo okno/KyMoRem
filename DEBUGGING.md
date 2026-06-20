@@ -61,8 +61,8 @@ pgrep -a -f kymorem_client.py
 Read logs:
 
 ```bash
-tail -n 120 /tmp/kymorem-client.log
-tail -n 80 /tmp/kymorem-tray.log
+tail -n 120 "${KYMOREM_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp/kymorem-$(id -u)}}/kymorem-client.log"
+tail -n 80 "${KYMOREM_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp/kymorem-$(id -u)}}/kymorem-tray.log"
 tail -n 80 /tmp/kymorem-tray.launch.log
 ```
 
@@ -121,13 +121,41 @@ PY
 Check X11 access:
 
 ```bash
+echo "$XDG_SESSION_TYPE"
 echo "$DISPLAY"
 ls -l "$HOME/.Xauthority"
 command -v xdotool
 xdotool getmouselocation
 ```
 
-### Tray does not appear on Linux
+If `XDG_SESSION_TYPE` is `wayland`, KyMoRem exits with a clear diagnostic by
+default. Use an X11 session for the v0.1.1 Linux client.
+
+### Client exits immediately with a Wayland message
+
+This is intentional. The current Linux backend uses X11 input injection. To run
+diagnostic experiments only:
+
+```bash
+export KYMOREM_ALLOW_WAYLAND=1
+./run-client.sh
+```
+
+Do not treat this override as production Wayland support.
+
+### Socket Remains Busy After A Crash
+
+The client frees the two default sockets at startup only when the owner process
+is KyMoRem. Manual recovery should prefer process-name cleanup:
+
+```bash
+pkill -f kymorem_client.py || true
+ss -ltnup | grep -E '54865|54866' || true
+```
+
+Avoid broad `fuser -k` cleanup unless an operator has verified the port owner.
+
+### Tray Does Not Appear On Linux
 
 Check:
 
@@ -146,3 +174,16 @@ Press `Ctrl+Esc`. If required, kill the Windows host:
 ```powershell
 Stop-Process -Name KyMoRem -Force
 ```
+
+## Barrier Migration Checks
+
+When replacing Barrier on the same machines:
+
+```bash
+pkill -f "barrier|barrierc|barriers" || true
+ss -ltnp | grep -E '24800|54865' || true
+ss -lunp | grep 54866 || true
+```
+
+KyMoRem does not use Barrier's `24800/tcp`, SSL certificate folder, Bonjour
+compatibility layer, or Barrier screen-name config.

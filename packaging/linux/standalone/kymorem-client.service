@@ -8,9 +8,10 @@ Environment=DISPLAY=:0
 Environment=XAUTHORITY=%h/.Xauthority
 Environment=KYMOREM_BIND=0.0.0.0
 Environment=KYMOREM_PORT=54865
-Environment=KYMOREM_TOKEN=kymorem-local-default-change-me
+EnvironmentFile=-%h/.config/kymorem/kymorem.env
 ExecStart=@APP_DIR@/run-client.sh
 Restart=on-failure
+RestartPreventExitStatus=64
 RestartSec=2
 
 [Install]

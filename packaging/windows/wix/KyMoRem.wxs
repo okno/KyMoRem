@@ -2,7 +2,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
     Name="KyMoRem - Keyboard Mouse Remote"
-    Manufacturer="KyMoRem contributors"
+    Manufacturer="Pawel Zorzan Urban AKA okno"
     Version="$(var.ProductVersion)"
     UpgradeCode="{2B07E830-E85F-42B9-8EEF-7A3BDFE922B5}"
     Scope="perUser"

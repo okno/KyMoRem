@@ -11,7 +11,7 @@ high-trust endpoint.
 
 ## Current Security Model
 
-KyMoRem v0.1.0 protects sessions with:
+KyMoRem v0.1.1 protects sessions with:
 
 - shared token required by discovery and TCP session establishment;
 - encrypted UDP discovery payloads on `54866/udp`;
@@ -33,7 +33,8 @@ Reference:
 
 ## Deployment Rules
 
-- Replace `kymorem-local-default-change-me` before operational use.
+- Replace `kymorem-local-default-change-me` before operational use. Runtime
+  refuses it unless `KYMOREM_ALLOW_DEFAULT_TOKEN=1` is set for diagnostics.
 - Keep `54865/tcp` and `54866/udp` limited to trusted LAN segments.
 - Use host firewalls to scope traffic to expected subnets.
 - Store SMTP credentials in environment variables, not in `config.json`.

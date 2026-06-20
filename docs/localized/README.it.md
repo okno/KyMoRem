@@ -5,7 +5,7 @@ client Linux X11.
 
 ## Host Windows
 
-1. Installa `KyMoRem-0.1.0-windows-x64-setup.exe`.
+1. Installa `KyMoRem-0.1.1-windows-x64-setup.exe`.
 2. Apri `%APPDATA%\KyMoRem\config.json`.
 3. Sostituisci `token` con un valore lungo e condiviso.
 4. Avvia KyMoRem. La discovery puo trovare automaticamente il primo client.
@@ -13,7 +13,7 @@ client Linux X11.
 ## Client Linux
 
 ```bash
-tar -xzf KyMoRem-0.1.0-linux-x64-standalone.tar.gz
+tar -xzf KyMoRem-0.1.1-linux-x64-standalone.tar.gz
 cd KyMoRem-linux-x64-standalone
 export KYMOREM_TOKEN="token-lungo-condiviso"
 ./run-client.sh
@@ -44,7 +44,7 @@ oppure `Ctrl+Esc` sull'host.
 Windows:
 
 ```text
-artifacts\KyMoRem-0.1.0-windows-x64-uninstall.exe
+artifacts\KyMoRem-0.1.1-windows-x64-uninstall.exe
 ```
 
 Linux:

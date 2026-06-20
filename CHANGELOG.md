@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.1
+
+Security and identity hardening release.
+
+### Added
+
+- UI byline: `by Pawel Zorzan Urban AKA okno`.
+- Technical identity documentation for `KyMoRem`, `Keyboard Mouse Remote` and
+  `KMR` casing.
+- `KMR` favicon/icon mark and updated runtime PNG/ICO assets.
+- Barrier field issue review based on public failure modes.
+- Ten-cycle security review report.
+
+### Security
+
+- Refuse the development default token unless explicitly allowed for tests.
+- Enforce minimum token length.
+- Add max frame size enforcement for JSON and handshake frames.
+- Add secure-frame replay and out-of-order sequence rejection.
+- Use constant-time proof and token-id checks.
+- Use HMAC-derived token ids instead of raw SHA-256 prefixes.
+- Avoid public resolver references for local IP hints.
+- Kill only stale KyMoRem-owned port processes at runtime.
+- Harden SMTP relay header handling and STARTTLS context.
+- Move Linux PID/log files to a per-user runtime directory.
+- Release local control automatically when the secure link disconnects.
+- Stop connection retry loops when the token is invalid.
+
 ## 0.1.0
 
 Initial public technical seed.
@@ -23,12 +51,3 @@ Initial public technical seed.
 - Windows standalone executable, setup executable and uninstaller.
 - Linux `.deb`, portable archive and standalone daemon/test package.
 - Debugging, FAQ, security, protocol, operations and platform documentation.
-
-### Known Limits
-
-- Linux input injection targets X11, not Wayland.
-- macOS and Android are scaffolded but not release-grade.
-- Windows 32-bit and Linux 32-bit release artifacts are planned but not built in
-  this seed.
-- PQ security depends on the optional `pqcrypto` provider being present on both
-  peers; otherwise KyMoRem uses encrypted PSK fallback mode.

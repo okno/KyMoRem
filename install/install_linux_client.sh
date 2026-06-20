@@ -7,16 +7,31 @@ NAME="${KYMOREM_NAME:-linux-iMac}"
 USER_NAME="${SUDO_USER:-$USER}"
 USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 
+kill_kymorem_port_owner() {
+  local endpoint="$1"
+  local proto="$2"
+  command -v fuser >/dev/null 2>&1 || return 0
+  local pids
+  pids="$(fuser -n "$proto" "$endpoint" 2>/dev/null || true)"
+  for pid in $pids; do
+    local cmdline
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+    case "$cmdline" in
+      *[Kk][Yy][Mm][Oo][Rr][Ee][Mm]*)
+        kill -TERM "$pid" >/dev/null 2>&1 || true
+        ;;
+    esac
+  done
+}
+
 echo "Stopping old KyMoRem and Barrier instances..."
 pkill -f "$APP_DIR/kymorem_client.py" >/dev/null 2>&1 || true
 pkill -f "kymorem-client" >/dev/null 2>&1 || true
 pkill -f "barrier|barrierc|barriers" >/dev/null 2>&1 || true
 systemctl stop Barrier barrier barriers barrierc >/dev/null 2>&1 || true
 systemctl disable Barrier barrier barriers barrierc >/dev/null 2>&1 || true
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
-  fuser -k "54866/udp" >/dev/null 2>&1 || true
-fi
+kill_kymorem_port_owner "$PORT" tcp
+kill_kymorem_port_owner "54866" udp
 
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update
@@ -42,8 +57,14 @@ fi
 
 python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/python" -m pip install --upgrade pip wheel
-"$APP_DIR/venv/bin/python" -m pip install "cryptography>=42"
-"$APP_DIR/venv/bin/python" -m pip install "pqcrypto>=0.4.0" || echo "pqcrypto non disponibile: KyMoRem usera il fallback cifrato PSK-HKDF+AESGCM."
+cat > "$APP_DIR/requirements.txt" <<'EOF'
+cryptography==49.0.0
+pqcrypto==0.4.0
+EOF
+"$APP_DIR/venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt" || {
+  "$APP_DIR/venv/bin/python" -m pip install "cryptography==49.0.0"
+  echo "pqcrypto non disponibile: KyMoRem usera il fallback cifrato PSK-HKDF+AESGCM."
+}
 
 cat > "$APP_DIR/start-client.sh" <<EOF
 #!/usr/bin/env bash
@@ -51,10 +72,6 @@ set -euo pipefail
 export DISPLAY="\${DISPLAY:-:0}"
 export XAUTHORITY="\${XAUTHORITY:-$USER_HOME/.Xauthority}"
 pkill -f "$APP_DIR/kymorem_client.py" >/dev/null 2>&1 || true
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k "$PORT/tcp" >/dev/null 2>&1 || true
-  fuser -k "54866/udp" >/dev/null 2>&1 || true
-fi
 exec "$APP_DIR/venv/bin/python" "$APP_DIR/kymorem_client.py" --bind 0.0.0.0 --port "$PORT" --name "$NAME" --token "\${KYMOREM_TOKEN:-kymorem-local-default-change-me}"
 EOF
 chmod 0755 "$APP_DIR/start-client.sh"

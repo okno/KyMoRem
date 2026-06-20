@@ -8,6 +8,10 @@ $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 Write-Host "KyMoRem portable uninstall"
 Write-Host "Folder: $Here"
 
+if ((Split-Path -Leaf $Here) -notmatch "KyMoRem|kymorem") {
+    throw "Refusing to remove unexpected portable folder: $Here"
+}
+
 Get-Process -Name "kymorem-agent" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 if (-not $Force) {

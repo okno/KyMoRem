@@ -4,6 +4,9 @@ KyMoRem discovery is a small proprietary UDP broadcast protocol. It is designed
 to classify endpoints as host or client without exposing plaintext metadata to
 devices that do not know the shared token.
 
+It does not use Bonjour, Avahi compatibility shims or Barrier's screen-name
+autoconfiguration model.
+
 ## Port
 
 ```text

@@ -3,7 +3,7 @@ Version: @VERSION@
 Section: net
 Priority: optional
 Architecture: @ARCH@
-Maintainer: okno <okno@users.noreply.github.com>
+Maintainer: Pawel Zorzan Urban AKA okno <okno@users.noreply.github.com>
 Homepage: https://github.com/okno/KyMoRem
 Depends: libc6
 Description: KyMoRem - Keyboard Mouse Remote

@@ -1,5 +1,5 @@
 #ifndef AppVersion
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.1"
 #endif
 
 #ifndef Arch
@@ -12,7 +12,7 @@
 
 #define AppName "KyMoRem"
 #define AppFullName "KyMoRem - Keyboard Mouse Remote"
-#define AppPublisher "okno"
+#define AppPublisher "Pawel Zorzan Urban AKA okno"
 #define AppExeName "kymorem-agent.exe"
 
 [Setup]

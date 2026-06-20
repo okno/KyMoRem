@@ -11,9 +11,17 @@ button, wheel and key frames.
 No. KyMoRem uses a similar screen-edge workflow but has its own implementation,
 protocol, discovery layer and security model.
 
+## Which Barrier pain points does KyMoRem address?
+
+KyMoRem was hardened against common public Barrier failure modes: vague
+"starting" loops, missing SSL certificate bootstrap, Wayland clients that appear
+to run but cannot inject input, clipboard stalls, and Bonjour/Avahi discovery
+confusion. The technical matrix is in
+[docs/barrier-field-issues.md](docs/barrier-field-issues.md).
+
 ## Which platforms work today?
 
-Release-grade path in v0.1.0:
+Release-grade path in v0.1.1:
 
 - Windows x64 host with Cyber Noir UI and system tray.
 - Linux x64 X11 client with `xdotool` input injection.
@@ -44,8 +52,9 @@ does not have `DISPLAY`, `XAUTHORITY` or the user DBus session.
 
 ## Does Wayland work?
 
-Not as a full input-injection target in v0.1.0. Wayland blocks global input
-injection in many compositors. The Linux MVP targets X11.
+Not as a full input-injection target in v0.1.1. Wayland blocks global input
+injection in many compositors. The Linux client detects Wayland and exits with a
+clear diagnostic unless an explicit diagnostic override is set.
 
 ## How do I exit remote control mode?
 
@@ -65,12 +74,12 @@ Windows:
 Linux:
 
 ```text
-/tmp/kymorem-client.log
-/tmp/kymorem-tray.log
+${XDG_RUNTIME_DIR:-/tmp/kymorem-$UID}/kymorem-client.log
+${XDG_RUNTIME_DIR:-/tmp/kymorem-$UID}/kymorem-tray.log
 /tmp/kymorem-tray.launch.log
 ```
 
 ## Which languages are included?
 
-Only IT, EN and CH are included in v0.1.0 runtime strings, packaging metadata
+Only IT, EN and CH are included in v0.1.1 runtime strings, packaging metadata
 and localized documentation.

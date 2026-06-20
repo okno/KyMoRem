@@ -4,16 +4,18 @@ import os
 import queue
 import smtplib
 import socket
+import ssl
 import sys
 import threading
 import time
 import tkinter as tk
 from email.message import EmailMessage
+from email.utils import parseaddr
 from pathlib import Path
 from tkinter import ttk
 
-from kymorem_common import APP_NAME, DEFAULT_CONFIG, PORT, TEXT, VERSION, frame
-from kymorem_crypto import CryptoError, secure_connect
+from kymorem_common import APP_AUTHOR, APP_EXTENDED_NAME, APP_NAME, APP_SHORT_MARK, APP_SIGNATURE, DEFAULT_CONFIG, PORT, TEXT, VERSION, frame
+from kymorem_crypto import CryptoError, secure_connect, validate_token
 from kymorem_discovery import DiscoveryBeacon, DiscoveryListener
 
 try:
@@ -105,7 +107,7 @@ def screen_size() -> tuple[int, int]:
 def local_ip_hint() -> str:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
+            sock.connect(("192.0.2.1", 9))
             return sock.getsockname()[0]
     except OSError:
         return "local-host"
@@ -129,7 +131,7 @@ def load_config() -> dict:
         if key not in config:
             config[key] = value
             changed = True
-    for key in ["security", "discovery", "email_relay"]:
+    for key in ["security", "clipboard", "discovery", "email_relay"]:
         merged = dict(DEFAULT_CONFIG[key])
         merged.update(config.get(key, {}))
         if merged != config.get(key):
@@ -311,7 +313,7 @@ class KyMoRemApp:
         self.discovery_listener = None
         self.tray_icon = None
         self.root = tk.Tk()
-        self.root.title(f"{APP_NAME} {VERSION} // Neon Route Console")
+        self.root.title(f"{APP_NAME} {VERSION} // {APP_SHORT_MARK} Neon Route Console")
         self.root.geometry("1120x700")
         self.root.minsize(980, 620)
         self.root.configure(bg=CYBER["bg"])
@@ -351,14 +353,21 @@ class KyMoRemApp:
         title_box.pack(side="left", fill="x", expand=True)
         tk.Label(
             title_box,
-            text="KYMOREM",
+            text="KyMoRem",
             fg=CYBER["cyan"],
             bg=CYBER["bg"],
             font=("Consolas", 34, "bold"),
         ).pack(anchor="w")
         tk.Label(
             title_box,
-            text="KEYBOARD MOUSE REMOTE // RIGHT EDGE ROUTER // LAN NODE 54865",
+            text=f"by {APP_AUTHOR}",
+            fg=CYBER["text"],
+            bg=CYBER["bg"],
+            font=("Consolas", 11, "bold"),
+        ).pack(anchor="w", pady=(0, 2))
+        tk.Label(
+            title_box,
+            text=f"{APP_EXTENDED_NAME} // {APP_SHORT_MARK} // RIGHT EDGE ROUTER // LAN NODE 54865",
             fg=CYBER["pink"],
             bg=CYBER["bg"],
             font=("Consolas", 11, "bold"),
@@ -420,6 +429,17 @@ class KyMoRemApp:
         )
         self.discovery_badge.pack(anchor="w", padx=18, pady=(0, 12))
 
+        self.signature_badge = tk.Label(
+            right,
+            text=f"{APP_SIGNATURE} // {VERSION}",
+            fg=CYBER["yellow"],
+            bg=CYBER["panel"],
+            font=("Consolas", 9, "bold"),
+            wraplength=320,
+            justify="left",
+        )
+        self.signature_badge.pack(anchor="w", padx=18, pady=(0, 12))
+
         tk.Label(right, text="EVENT STREAM", fg=CYBER["yellow"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(6, 8))
         self.log = tk.Text(
             right,
@@ -458,6 +478,15 @@ class KyMoRemApp:
     def _token(self) -> str:
         return str(self.config.get("token") or DEFAULT_CONFIG["token"])
 
+    def _token_valid(self) -> bool:
+        try:
+            validate_token(self._token())
+            return True
+        except CryptoError as exc:
+            self.status.configure(text="TOKEN REQUIRED", fg=CYBER["yellow"])
+            self._log(f"Token non valido: {exc}")
+            return False
+
     def _identity(self) -> dict:
         return {
             "role": "host",
@@ -490,27 +519,51 @@ class KyMoRemApp:
 
     def _send_relay_email(self, relay: dict, subject: str, body: str) -> None:
         message = EmailMessage()
-        message["From"] = str(relay.get("from"))
-        message["To"] = ", ".join(relay.get("to", []))
-        message["Subject"] = subject
+        sender = self._safe_email(str(relay.get("from", "")))
+        recipients = [self._safe_email(str(item)) for item in relay.get("to", [])]
+        recipients = [item for item in recipients if item]
+        if not sender or not recipients:
+            self.events.put(("log", "Email relay fallito: mittente o destinatari non validi."))
+            return
+        message["From"] = sender
+        message["To"] = ", ".join(recipients)
+        message["Subject"] = self._safe_header(subject)
         message.set_content(body + f"\n\nHost: {self.local_ip}\nVersion: {VERSION}\n")
         password = os.environ.get(str(relay.get("smtp_password_env", "KYMOREM_SMTP_PASSWORD")), "")
         try:
             with smtplib.SMTP(str(relay.get("smtp_host")), int(relay.get("smtp_port", 587)), timeout=10) as smtp:
                 if relay.get("smtp_starttls", True):
-                    smtp.starttls()
+                    smtp.starttls(context=ssl.create_default_context())
                 username = str(relay.get("smtp_username", ""))
                 if username:
+                    if not password:
+                        raise RuntimeError("SMTP username configured but password env is empty")
                     smtp.login(username, password)
                 smtp.send_message(message)
         except Exception as exc:
             self.events.put(("log", f"Email relay fallito: {exc}"))
+
+    def _safe_header(self, value: str) -> str:
+        return str(value).replace("\r", " ").replace("\n", " ")[:160]
+
+    def _safe_email(self, value: str) -> str:
+        if "\r" in value or "\n" in value:
+            return ""
+        _name, addr = parseaddr(value)
+        if "@" not in addr:
+            return ""
+        return addr
 
     def _start_discovery(self) -> None:
         if not self._discovery_enabled():
             self._log("Discovery LAN disattivata da configurazione.")
             return
         token = self._token()
+        try:
+            validate_token(token)
+        except CryptoError as exc:
+            self._log(f"Discovery non avviata: {exc}")
+            return
         name = str(self.config.get("server_name") or os.environ.get("COMPUTERNAME", "Windows"))
         self.discovery_beacon = DiscoveryBeacon(token, "host", name, PORT)
         self.discovery_listener = DiscoveryListener(token, lambda payload, addr: self.events.put(("discovery", (payload, addr))))
@@ -677,7 +730,7 @@ class KyMoRemApp:
         for x in range(0, w, 74):
             c.create_line(x, 0, x, horizon, fill="#0b1424")
         c.create_text(w - 22, 24, text="NEON ROUTE MAP", anchor="e", fill=CYBER["pink"], font=("Consolas", 10, "bold"))
-        c.create_text(22, 24, text="GRID//ACTIVE", anchor="w", fill=CYBER["cyan"], font=("Consolas", 10, "bold"))
+        c.create_text(22, 24, text=f"{APP_SHORT_MARK}//ACTIVE", anchor="w", fill=CYBER["cyan"], font=("Consolas", 10, "bold"))
 
     def _beveled_rect(self, box: tuple[int, int, int, int], outline: str, fill: str) -> None:
         x1, y1, x2, y2 = box
@@ -723,6 +776,8 @@ class KyMoRemApp:
         c.create_line(0, pulse, w, pulse, fill=CYBER["pink_dim"], width=2)
 
     def _connect(self) -> None:
+        if not self._token_valid():
+            return
         self.client_badge.configure(text=f"RIGHT NODE // {self._client_host()}")
         self.link.connect(self._client_host(), self._client_port(), self._token(), self._identity())
 
@@ -760,6 +815,8 @@ class KyMoRemApp:
                 self.status.configure(text="REMOTE" if payload else self.text["status_connected"])
                 self._draw_layout()
             elif kind == "disconnected":
+                if self.engine.remote:
+                    self.engine.release()
                 self.status.configure(text=self.text["status_disconnected"], fg="#ff5c7a")
                 self._draw_layout()
         self.root.after(80, self._tick)

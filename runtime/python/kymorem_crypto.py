@@ -7,7 +7,7 @@ import socket
 from dataclasses import dataclass
 from typing import Any
 
-from kymorem_common import ENCODING, PROTOCOL, VERSION, frame, read_frames, send
+from kymorem_common import DEFAULT_TOKEN, ENCODING, MAX_FRAME_BYTES, PROTOCOL, VERSION, frame, read_frames, send
 
 try:
     from cryptography.hazmat.primitives import hashes
@@ -37,6 +37,7 @@ FRAME_AAD = b"KyMoRem secure frame v1"
 SUITE_MLKEM = "ml-kem-768+psk-hkdf-sha256+aes-256-gcm"
 SUITE_PSK = "psk-hkdf-sha256+aes-256-gcm"
 DEFAULT_SUITES = [SUITE_MLKEM, SUITE_PSK]
+MIN_TOKEN_LEN = 24
 
 
 class CryptoError(RuntimeError):
@@ -82,7 +83,16 @@ def supported_suites() -> list[str]:
 
 
 def token_fingerprint(token: str) -> str:
-    return hashlib.sha256(token.encode(ENCODING)).hexdigest()[:16]
+    return hmac.new(b"KyMoRem token id v1", token.encode(ENCODING), hashlib.sha256).hexdigest()[:32]
+
+
+def validate_token(token: str) -> None:
+    if not token:
+        raise CryptoError("empty KyMoRem token is not allowed")
+    if token == DEFAULT_TOKEN and os.environ.get("KYMOREM_ALLOW_DEFAULT_TOKEN") != "1":
+        raise CryptoError("refusing the development default token; set KYMOREM_TOKEN/config token")
+    if len(token) < MIN_TOKEN_LEN:
+        raise CryptoError(f"KyMoRem token must be at least {MIN_TOKEN_LEN} characters")
 
 
 def _require_crypto() -> None:
@@ -96,8 +106,7 @@ def _hkdf(secret: bytes, salt: bytes, info: bytes, length: int = 32) -> bytes:
 
 
 def _token_secret(token: str, context: bytes) -> bytes:
-    if not token:
-        raise CryptoError("empty KyMoRem token is not allowed")
+    validate_token(token)
     return _hkdf(token.encode(ENCODING), b"KyMoRem token salt v1", context)
 
 
@@ -122,6 +131,8 @@ def _read_one_plain(sock: socket.socket, timeout: float = 10.0) -> dict[str, Any
             if not chunk:
                 raise CryptoError("connection closed during handshake")
             buffer += chunk
+            if len(buffer) > MAX_FRAME_BYTES:
+                raise CryptoError("handshake frame exceeds maximum size")
         line, _rest = buffer.split(b"\n", 1)
         return json.loads(line.decode(ENCODING))
     finally:
@@ -135,6 +146,7 @@ class SecureJsonLink:
     suite: str
     peer: dict[str, Any]
     tx_seq: int = 0
+    rx_seq: int = 0
 
     def send(self, message: dict[str, Any]) -> None:
         self.tx_seq += 1
@@ -158,7 +170,12 @@ class SecureJsonLink:
             if outer.get("type") != SECURE_FRAME:
                 raise CryptoError(f"unexpected plaintext frame after secure handshake: {outer.get('type')}")
             payload = outer.get("payload", {})
+            if payload.get("suite") != self.suite:
+                raise CryptoError("secure frame suite mismatch")
             seq = int(payload.get("seq", 0))
+            if seq <= self.rx_seq:
+                raise CryptoError("secure frame replay or out-of-order sequence")
+            self.rx_seq = seq
             nonce = unb64(str(payload.get("nonce", "")))
             ciphertext = unb64(str(payload.get("data", "")))
             aad = FRAME_AAD + b":" + str(seq).encode("ascii")
@@ -168,6 +185,7 @@ class SecureJsonLink:
 
 def secure_connect(sock: socket.socket, token: str, identity: dict[str, Any]) -> SecureJsonLink:
     _require_crypto()
+    validate_token(token)
     init_nonce = os.urandom(16)
     init = frame(
         HANDSHAKE_INIT,
@@ -207,18 +225,19 @@ def secure_connect(sock: socket.socket, token: str, identity: dict[str, Any]) ->
     ack = _read_one_plain(sock)
     if ack.get("type") != HANDSHAKE_ACK:
         raise CryptoError(f"expected {HANDSHAKE_ACK}, got {ack.get('type')}")
-    if ack.get("payload", {}).get("proof") != _proof(session_key, b"ack", transcript):
+    if not hmac.compare_digest(str(ack.get("payload", {}).get("proof", "")), _proof(session_key, b"ack", transcript)):
         raise CryptoError("invalid secure handshake acknowledgement")
     return SecureJsonLink(sock=sock, key=session_key, suite=suite, peer=payload.get("identity", {}))
 
 
 def secure_accept(sock: socket.socket, token: str, identity: dict[str, Any]) -> SecureJsonLink:
     _require_crypto()
+    validate_token(token)
     init = _read_one_plain(sock)
     if init.get("type") != HANDSHAKE_INIT:
         raise CryptoError(f"expected {HANDSHAKE_INIT}, got {init.get('type')}")
     payload = init.get("payload", {})
-    if payload.get("token_id") != token_fingerprint(token):
+    if not hmac.compare_digest(str(payload.get("token_id", "")), token_fingerprint(token)):
         raise CryptoError("token fingerprint mismatch")
     peer_suites = payload.get("suites", [])
     local_suites = supported_suites()
@@ -254,7 +273,7 @@ def secure_accept(sock: socket.socket, token: str, identity: dict[str, Any]) -> 
         kem_secret = ml_kem_768.decrypt(secret_key, unb64(str(finish_payload.get("kem_ciphertext", ""))))
 
     session_key = _derive_session_key(suite, token, kem_secret, init_nonce, response_nonce, transcript)
-    if finish_payload.get("proof") != _proof(session_key, b"finish", transcript):
+    if not hmac.compare_digest(str(finish_payload.get("proof", "")), _proof(session_key, b"finish", transcript)):
         raise CryptoError("invalid secure handshake proof")
     transcript += canonical(finish)
 
@@ -264,6 +283,7 @@ def secure_accept(sock: socket.socket, token: str, identity: dict[str, Any]) -> 
 
 def encrypt_discovery(token: str, payload: dict[str, Any]) -> bytes:
     _require_crypto()
+    validate_token(token)
     nonce = os.urandom(12)
     key = _token_secret(token, b"discovery broadcast")
     ciphertext = AESGCM(key).encrypt(nonce, canonical(payload), DISCOVERY_AAD)
@@ -279,10 +299,13 @@ def encrypt_discovery(token: str, payload: dict[str, Any]) -> bytes:
 
 def decrypt_discovery(token: str, datagram: bytes) -> dict[str, Any]:
     _require_crypto()
+    validate_token(token)
+    if len(datagram) > MAX_FRAME_BYTES:
+        raise CryptoError("discovery datagram exceeds maximum size")
     outer = json.loads(datagram.decode(ENCODING))
     if outer.get("magic") != DISCOVERY_MAGIC:
         raise CryptoError("not a KyMoRem discovery datagram")
-    if outer.get("kid") != token_fingerprint(token):
+    if not hmac.compare_digest(str(outer.get("kid", "")), token_fingerprint(token)):
         raise CryptoError("discovery token fingerprint mismatch")
     key = _token_secret(token, b"discovery broadcast")
     plaintext = AESGCM(key).decrypt(unb64(str(outer["nonce"])), unb64(str(outer["data"])), DISCOVERY_AAD)

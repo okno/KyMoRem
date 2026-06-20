@@ -39,7 +39,7 @@ The standalone package can be assembled from `packaging/linux/standalone` plus
 ## GitHub Release
 
 ```powershell
-gh release create v0.1.0 artifacts\* --title "KyMoRem v0.1.0" --notes-file RELEASE_NOTES.md
+gh release create v0.1.1 artifacts\* --title "KyMoRem v0.1.1" --notes-file RELEASE_NOTES.md
 ```
 
 ## Preflight

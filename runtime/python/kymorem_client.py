@@ -3,25 +3,44 @@ import argparse
 import os
 import signal
 import socket
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
 
-from kymorem_common import APP_NAME, DEFAULT_TOKEN, PORT, VERSION, frame
-from kymorem_crypto import CryptoError, secure_accept
+from kymorem_common import APP_AUTHOR, APP_NAME, DEFAULT_TOKEN, DISCOVERY_PORT, PORT, VERSION, frame
+from kymorem_crypto import CryptoError, secure_accept, validate_token
 from kymorem_discovery import DiscoveryBeacon
 
 
-PID_FILE = Path("/tmp/kymorem-client.pid")
-LOG_FILE = Path("/tmp/kymorem-client.log")
+def _runtime_dir() -> Path:
+    base = os.environ.get("KYMOREM_RUNTIME_DIR") or os.environ.get("XDG_RUNTIME_DIR")
+    if not base:
+        uid = os.getuid() if hasattr(os, "getuid") else "user"
+        base = str(Path(tempfile.gettempdir()) / f"kymorem-{uid}")
+    path = Path(base)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+    return path
+
+
+RUNTIME_DIR = _runtime_dir()
+PID_FILE = RUNTIME_DIR / "kymorem-client.pid"
+LOG_FILE = RUNTIME_DIR / "kymorem-client.log"
 
 BUTTONS = {
     "left": "1",
     "right": "3",
     "middle": "2",
 }
+
+MAX_MOVE_DELTA = 4096
 
 KEYS = {
     **{f"VK_{chr(code)}": chr(code).lower() for code in range(ord("A"), ord("Z") + 1)},
@@ -58,7 +77,7 @@ def log(message: str) -> None:
 def env_for_x() -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0")
-    home = env.get("HOME", "/home/linux")
+    home = env.get("HOME", str(Path.home()))
     xauth = Path(home) / ".Xauthority"
     if xauth.exists():
         env.setdefault("XAUTHORITY", str(xauth))
@@ -108,6 +127,7 @@ def screen_size() -> tuple[int, int]:
 
 class ClientAgent:
     def __init__(self, bind: str, port: int, name: str, token: str):
+        validate_token(token)
         self.bind = bind
         self.port = port
         self.name = name
@@ -118,9 +138,10 @@ class ClientAgent:
 
     def serve(self) -> None:
         self._write_pid()
+        self._verify_session()
         self._verify_tools()
         self.discovery.start()
-        log(f"{APP_NAME} client {VERSION} listening on {self.bind}:{self.port}")
+        log(f"{APP_NAME} client {VERSION} by {APP_AUTHOR} listening on {self.bind}:{self.port}")
 
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
@@ -180,7 +201,7 @@ class ClientAgent:
             self.move_pointer(-36, 0)
             link.send(frame("pulse_ack", name=self.name))
         elif kind == "move":
-            self.move_pointer(int(payload.get("dx", 0)), int(payload.get("dy", 0)))
+            self.move_pointer(clamp_delta(payload.get("dx", 0)), clamp_delta(payload.get("dy", 0)))
             self.report_edge(link)
         elif kind == "button":
             button = BUTTONS.get(str(payload.get("button", "left")), "1")
@@ -213,11 +234,24 @@ class ClientAgent:
 
     def _verify_tools(self) -> None:
         for tool in ["xdotool", "xdpyinfo"]:
-            if subprocess.run(["which", tool], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+            if shutil.which(tool) is None:
                 raise RuntimeError(f"{tool} is required")
 
+    def _verify_session(self) -> None:
+        session = os.environ.get("XDG_SESSION_TYPE", "").lower()
+        if session == "wayland" and os.environ.get("KYMOREM_ALLOW_WAYLAND") != "1":
+            raise RuntimeError(
+                "Wayland session detected. KyMoRem v0.1.1 Linux client targets X11; "
+                "start an X11 session or set KYMOREM_ALLOW_WAYLAND=1 only for diagnostics."
+            )
+
     def _write_pid(self) -> None:
-        PID_FILE.write_text(str(os.getpid()), encoding="ascii")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(PID_FILE, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="ascii") as handle:
+            handle.write(str(os.getpid()))
 
 
 def stop_running_instance() -> None:
@@ -238,6 +272,38 @@ def stop_running_instance() -> None:
         log(f"cannot stop previous pid {pid}")
 
 
+def clamp_delta(value) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(-MAX_MOVE_DELTA, min(MAX_MOVE_DELTA, number))
+
+
+def _cmdline_for_pid(pid: str) -> str:
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_text(encoding="utf-8", errors="ignore").replace("\x00", " ")
+    except OSError:
+        return ""
+
+
+def free_socket(port: int, proto: str = "tcp") -> None:
+    fuser = shutil.which("fuser")
+    if not fuser:
+        return
+    result = subprocess.run([fuser, "-n", proto, str(port)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False)
+    for pid in result.stdout.split():
+        cmdline = _cmdline_for_pid(pid).lower()
+        if "kymorem" not in cmdline:
+            log(f"port {port}/{proto} is owned by non-KyMoRem pid {pid}; refusing to kill it")
+            continue
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            log(f"stopped stale KyMoRem pid {pid} on {port}/{proto}")
+        except (ProcessLookupError, PermissionError, ValueError) as exc:
+            log(f"cannot stop pid {pid} on {port}/{proto}: {exc}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="KyMoRem Linux client")
     parser.add_argument("--bind", default="0.0.0.0")
@@ -247,9 +313,14 @@ def main() -> int:
     args = parser.parse_args()
 
     stop_running_instance()
-    agent = ClientAgent(args.bind, args.port, args.name, args.token)
+    free_socket(args.port, "tcp")
+    free_socket(DISCOVERY_PORT, "udp")
     try:
+        agent = ClientAgent(args.bind, args.port, args.name, args.token)
         agent.serve()
+    except CryptoError as exc:
+        log(f"security configuration error: {exc}")
+        return 64
     except KeyboardInterrupt:
         return 0
     return 0

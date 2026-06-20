@@ -5,6 +5,19 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "KyMoRem portable uninstall"
 echo "Folder: $HERE"
 
+remove_portable_dir() {
+  case "$(basename "$HERE")" in
+    *KyMoRem*|*kymorem*)
+      cd /
+      rm -rf -- "$HERE"
+      ;;
+    *)
+      echo "Refusing to remove unexpected portable folder: $HERE" >&2
+      exit 1
+      ;;
+  esac
+}
+
 pkill -f "kymorem-agent" >/dev/null 2>&1 || true
 
 if [[ "${1:-}" != "--force" ]]; then
@@ -15,5 +28,4 @@ if [[ "${1:-}" != "--force" ]]; then
   fi
 fi
 
-cd /
-rm -rf "$HERE"
+remove_portable_dir

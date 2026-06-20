@@ -5,8 +5,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${KYMOREM_APP_DIR:-$HOME/.local/share/kymorem}"
 UNIT_DIR="$HOME/.config/systemd/user"
 AUTOSTART_DIR="$HOME/.config/autostart"
+CONFIG_DIR="$HOME/.config/kymorem"
 
-mkdir -p "$APP_DIR/bin" "$UNIT_DIR" "$AUTOSTART_DIR"
+mkdir -p "$APP_DIR/bin" "$UNIT_DIR" "$AUTOSTART_DIR" "$CONFIG_DIR"
 cp -R "$DIR/bin/." "$APP_DIR/bin/"
 cp "$DIR/run-client.sh" "$APP_DIR/run-client.sh"
 cp "$DIR/run-test.sh" "$APP_DIR/run-test.sh"
@@ -17,10 +18,20 @@ chmod 0755 "$APP_DIR/run-client.sh" "$APP_DIR/run-test.sh" "$APP_DIR/kymorem-tra
 
 python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/python" -m pip install --upgrade pip wheel
-"$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt"
-"$APP_DIR/.venv/bin/python" -m pip install "pqcrypto>=0.4.0" || echo "pqcrypto non disponibile: fallback cifrato PSK-HKDF+AESGCM."
+"$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt" || {
+  "$APP_DIR/.venv/bin/python" -m pip install "cryptography==49.0.0"
+  echo "pqcrypto non disponibile: fallback cifrato PSK-HKDF+AESGCM."
+}
 
 sed "s|@APP_DIR@|$APP_DIR|g" "$DIR/kymorem-client.service" > "$UNIT_DIR/kymorem-client.service"
+if [ ! -f "$CONFIG_DIR/kymorem.env" ]; then
+  cat > "$CONFIG_DIR/kymorem.env" <<'EOF'
+# Set the same strong token configured on the KyMoRem host.
+# Example:
+# KYMOREM_TOKEN=replace-with-a-random-token-at-least-24-characters
+EOF
+  chmod 0600 "$CONFIG_DIR/kymorem.env"
+fi
 systemctl --user daemon-reload
 systemctl --user enable --now kymorem-client.service
 
@@ -35,4 +46,6 @@ X-GNOME-Autostart-enabled=true
 EOF
 
 echo "KyMoRem standalone daemon installed."
+echo "Set KYMOREM_TOKEN in $CONFIG_DIR/kymorem.env, then restart with:"
+echo "systemctl --user restart kymorem-client.service"
 echo "Status: systemctl --user status kymorem-client.service"

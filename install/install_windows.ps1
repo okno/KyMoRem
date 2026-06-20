@@ -29,6 +29,11 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
         preferred_suite = "ml-kem-768+psk-hkdf-sha256+aes-256-gcm"
         fallback_suite = "psk-hkdf-sha256+aes-256-gcm"
     }
+    clipboard = @{
+        enabled = $false
+        max_bytes = 1048576
+        text_only = $true
+    }
     discovery = @{
         enabled = $true
         auto_connect = $true

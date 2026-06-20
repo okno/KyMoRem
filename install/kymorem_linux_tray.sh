@@ -4,8 +4,11 @@ set -euo pipefail
 APP_DIR="/opt/kymorem"
 PORT="${KYMOREM_PORT:-54865}"
 ICON="$APP_DIR/kymorem-64.png"
-LOG="/tmp/kymorem-client.log"
-LAUNCH_LOG="/tmp/kymorem-tray.log"
+RUNTIME_DIR="${KYMOREM_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp/kymorem-$(id -u)}}"
+mkdir -p "$RUNTIME_DIR"
+chmod 700 "$RUNTIME_DIR" >/dev/null 2>&1 || true
+LOG="$RUNTIME_DIR/kymorem-client.log"
+LAUNCH_LOG="$RUNTIME_DIR/kymorem-tray.log"
 
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
@@ -22,17 +25,11 @@ ensure_client() {
 
 restart_client() {
   pkill -f "$APP_DIR/kymorem_client.py" >/dev/null 2>&1 || true
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
-  fi
   nohup "$APP_DIR/start-client.sh" >>"$LAUNCH_LOG" 2>&1 &
 }
 
 stop_client() {
   pkill -f "$APP_DIR/kymorem_client.py" >/dev/null 2>&1 || true
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
-  fi
 }
 
 show_status() {

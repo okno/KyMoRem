@@ -12,7 +12,7 @@
   "hostMode": "Modalita host",
   "deviceMode": "Modalita dispositivo",
   "pairingToken": "Token di abbinamento",
-  "securityNotice": "Usa KyMoRem solo su reti fidate finche la cifratura non sara abilitata.",
+  "securityNotice": "Usa KyMoRem con un token dedicato e porte limitate alla LAN fidata.",
   "finishMessage": "KyMoRem e pronto.",
   "uninstallMessage": "KyMoRem e stato rimosso."
 }

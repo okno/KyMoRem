@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="240" viewBox="0 0 820 240" role="img" aria-labelledby="title desc">
   <title id="title">KyMoRem installer banner</title>
-  <desc id="desc">Dark KyMoRem banner with connected desktop and Android device.</desc>
+  <desc id="desc">Dark KyMoRem banner with KMR mark and connected desktop device.</desc>
   <defs>
     <linearGradient id="line" x1="104" y1="80" x2="710" y2="170" gradientUnits="userSpaceOnUse">
       <stop stop-color="#19d3da"/>
@@ -15,6 +15,8 @@
   <path d="M390 93l36 27-36 27" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M83 92h26M125 92h26M167 92h26M83 128h110M83 164h164" stroke="#f4f7fb" stroke-width="8" stroke-linecap="round"/>
   <path d="M607 76h56M594 154h82" stroke="#f4f7fb" stroke-width="8" stroke-linecap="round"/>
+  <text x="620" y="126" text-anchor="middle" fill="#00f5ff" font-family="Consolas, 'Segoe UI Mono', monospace" font-size="42" font-weight="800">KMR</text>
   <text x="48" y="224" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700">KyMoRem</text>
   <text x="188" y="224" fill="#b8c2d6" font-family="Segoe UI, Arial, sans-serif" font-size="18">Keyboard Mouse Remote</text>
+  <text x="464" y="224" fill="#39e58c" font-family="Segoe UI, Arial, sans-serif" font-size="14">by Pawel Zorzan Urban AKA okno</text>
 </svg>

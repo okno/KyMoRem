@@ -23,8 +23,8 @@
   <key>LSMinimumSystemVersion</key>
   <string>10.13</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>KyMoRem uses events to share keyboard and pointer input across your devices.</string>
+  <string>KyMoRem uses local events to share keyboard and pointer input across authorized devices.</string>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright 2026 KyMoRem contributors</string>
+  <string>Copyright 2026 Pawel Zorzan Urban AKA okno</string>
 </dict>
 </plist>

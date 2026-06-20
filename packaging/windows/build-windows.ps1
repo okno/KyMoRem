@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.1",
     [ValidateSet("x64", "x86")]
     [string[]]$Architectures = @("x64", "x86"),
     [switch]$SkipCompile

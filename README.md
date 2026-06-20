@@ -15,7 +15,7 @@ wire protocol.
 
 ## Current Release
 
-`v0.1.0` is a technical seed release.
+`v0.1.1` is a technical seed release.
 
 Implemented:
 
@@ -43,17 +43,18 @@ Scaffolded:
 
 Windows host:
 
-1. Install `KyMoRem-0.1.0-windows-x64-setup.exe`.
+1. Install `KyMoRem-0.1.1-windows-x64-setup.exe`.
 2. Open `%APPDATA%\KyMoRem\config.json`.
-3. Set a long shared `token`.
+3. Set a long shared `token`. The development placeholder token is refused by
+   default.
 4. Start KyMoRem. Discovery can select the first compatible client
    automatically.
 
 Linux client:
 
 ```bash
-tar -xzf KyMoRem-0.1.0-linux-x64-standalone.tar.gz
-cd KyMoRem-linux-x64-standalone
+tar -xzf KyMoRem-0.1.1-linux-x64-standalone.tar.gz
+cd KyMoRem
 export KYMOREM_TOKEN="use-a-long-shared-token"
 ./run-client.sh
 ```
@@ -69,6 +70,8 @@ User daemon:
 
 ```bash
 ./install-daemon.sh
+nano ~/.config/kymorem/kymorem.env
+systemctl --user restart kymorem-client.service
 systemctl --user status kymorem-client.service
 ```
 
@@ -107,22 +110,26 @@ assets/themes/               Theme tokens
 - [Protocol](docs/protocol.md)
 - [Cryptography](docs/cryptography.md)
 - [LAN Discovery](docs/discovery.md)
+- [Barrier Field Issue Review](docs/barrier-field-issues.md)
 - [Operations](docs/operations.md)
 - [Email Relay](docs/email-relay.md)
 - [Localization](docs/localization.md)
 - [Tray Integration](docs/tray.md)
+- [Technical Identity](docs/technical-identity.md)
 - [Themes](docs/themes.md)
 - [Debugging](DEBUGGING.md)
 - [FAQ](FAQ.md)
 - [Security](SECURITY.md)
+- [Security Review 2026-06-20](docs/security-review-2026-06-20.md)
 - [Release Process](docs/release.md)
 
 ## Security Notice
 
 KyMoRem controls local input. Deploy it only on networks where device access,
 firewall policy and token distribution are managed. Replace the development
-token before use. Do not expose `54865/tcp` or `54866/udp` to untrusted
-networks.
+token before use. KyMoRem refuses the placeholder token unless
+`KYMOREM_ALLOW_DEFAULT_TOKEN=1` is set for diagnostics. Do not expose
+`54865/tcp` or `54866/udp` to untrusted networks.
 
 ## License
 

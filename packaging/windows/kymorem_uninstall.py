@@ -4,6 +4,13 @@ import subprocess
 from pathlib import Path
 
 
+def safe_rmtree(path: Path, expected_name: str) -> None:
+    resolved = path.resolve(strict=False)
+    if resolved.name != expected_name:
+        raise RuntimeError(f"refusing to remove unexpected path: {resolved}")
+    shutil.rmtree(resolved, ignore_errors=True)
+
+
 def main() -> int:
     ps = """
 Get-CimInstance Win32_Process |
@@ -12,11 +19,11 @@ Get-CimInstance Win32_Process |
 """
     subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], check=False)
 
-    shutil.rmtree(Path(os.environ["LOCALAPPDATA"]) / "KyMoRem", ignore_errors=True)
-    shutil.rmtree(Path(os.environ["APPDATA"]) / "KyMoRem", ignore_errors=True)
-    shutil.rmtree(
+    safe_rmtree(Path(os.environ["LOCALAPPDATA"]) / "KyMoRem", "KyMoRem")
+    safe_rmtree(Path(os.environ["APPDATA"]) / "KyMoRem", "KyMoRem")
+    safe_rmtree(
         Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "KyMoRem",
-        ignore_errors=True,
+        "KyMoRem",
     )
     desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop" / "KyMoRem.lnk"
     try:

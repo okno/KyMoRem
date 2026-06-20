@@ -12,7 +12,7 @@ from kymorem_crypto import DISCOVERY_INTERVAL, DISCOVERY_PORT, crypto_capabiliti
 def local_ip_hint() -> str:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
+            sock.connect(("192.0.2.1", 9))
             return sock.getsockname()[0]
     except OSError:
         return "127.0.0.1"

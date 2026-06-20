@@ -6,13 +6,18 @@ from typing import Any
 
 
 APP_NAME = "KyMoRem"
-VERSION = "0.1.0"
+VERSION = "0.1.1"
+APP_SHORT_MARK = "KMR"
+APP_EXTENDED_NAME = "Keyboard Mouse Remote"
+APP_AUTHOR = "Pawel Zorzan Urban AKA okno"
+APP_SIGNATURE = f"{APP_NAME} by {APP_AUTHOR}"
 PORT = 54865
 DISCOVERY_PORT = 54866
 PROTOCOL = 1
 ENCODING = "utf-8"
 DEFAULT_CLIENT_HOST = "127.0.0.1"
 DEFAULT_TOKEN = "kymorem-local-default-change-me"
+MAX_FRAME_BYTES = 65536
 
 
 def now_ms() -> int:
@@ -47,7 +52,11 @@ def read_frames(sock: socket.socket):
             line, buffer = buffer.split(b"\n", 1)
             if not line.strip():
                 continue
+            if len(line) > MAX_FRAME_BYTES:
+                raise ValueError("KyMoRem frame line exceeds maximum size")
             yield json.loads(line.decode(ENCODING))
+        if len(buffer) > MAX_FRAME_BYTES:
+            raise ValueError("KyMoRem pending frame exceeds maximum size")
 
 
 @dataclass
@@ -68,6 +77,11 @@ DEFAULT_CONFIG = {
         "required": True,
         "preferred_suite": "ml-kem-768+psk-hkdf-sha256+aes-256-gcm",
         "fallback_suite": "psk-hkdf-sha256+aes-256-gcm",
+    },
+    "clipboard": {
+        "enabled": False,
+        "max_bytes": 1048576,
+        "text_only": True,
     },
     "discovery": {
         "enabled": True,
@@ -99,7 +113,7 @@ DEFAULT_CONFIG = {
 TEXT = {
     "it": {
         "title": "KyMoRem",
-        "subtitle": "Keyboard Mouse Remote",
+        "subtitle": APP_EXTENDED_NAME,
         "connect": "Connetti client",
         "disconnect": "Disconnetti",
         "take": "Prendi controllo",
@@ -115,7 +129,7 @@ TEXT = {
     },
     "en": {
         "title": "KyMoRem",
-        "subtitle": "Keyboard Mouse Remote",
+        "subtitle": APP_EXTENDED_NAME,
         "connect": "Connect client",
         "disconnect": "Disconnect",
         "take": "Take control",

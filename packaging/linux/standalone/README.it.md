@@ -20,6 +20,8 @@ export KYMOREM_TOKEN="token-lungo-condiviso"
 
 ```bash
 ./install-daemon.sh
+nano ~/.config/kymorem/kymorem.env
+systemctl --user restart kymorem-client.service
 ```
 
 Controllo stato:

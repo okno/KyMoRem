@@ -5,7 +5,7 @@ Linux X11 client.
 
 ## Windows Host
 
-1. Install `KyMoRem-0.1.0-windows-x64-setup.exe`.
+1. Install `KyMoRem-0.1.1-windows-x64-setup.exe`.
 2. Open `%APPDATA%\KyMoRem\config.json`.
 3. Replace `token` with a long shared value.
 4. Start KyMoRem. Discovery can automatically select the first client.
@@ -13,7 +13,7 @@ Linux X11 client.
 ## Linux Client
 
 ```bash
-tar -xzf KyMoRem-0.1.0-linux-x64-standalone.tar.gz
+tar -xzf KyMoRem-0.1.1-linux-x64-standalone.tar.gz
 cd KyMoRem-linux-x64-standalone
 export KYMOREM_TOKEN="long-shared-token"
 ./run-client.sh
@@ -44,7 +44,7 @@ the host.
 Windows:
 
 ```text
-artifacts\KyMoRem-0.1.0-windows-x64-uninstall.exe
+artifacts\KyMoRem-0.1.1-windows-x64-uninstall.exe
 ```
 
 Linux:

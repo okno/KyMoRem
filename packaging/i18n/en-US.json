@@ -12,7 +12,7 @@
   "hostMode": "Host mode",
   "deviceMode": "Device mode",
   "pairingToken": "Pairing token",
-  "securityNotice": "Use KyMoRem only on trusted networks until encryption is enabled.",
+  "securityNotice": "Use KyMoRem with a dedicated token and ports limited to the trusted LAN.",
   "finishMessage": "KyMoRem is ready.",
   "uninstallMessage": "KyMoRem has been removed."
 }
