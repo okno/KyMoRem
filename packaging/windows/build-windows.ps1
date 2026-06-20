@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.1",
+    [string]$Version = "0.2.0-rc1",
     [ValidateSet("x64", "x86")]
     [string[]]$Architectures = @("x64", "x86"),
     [switch]$SkipCompile
@@ -11,6 +11,7 @@ $Artifacts = Join-Path $Root "artifacts"
 $DistRoot = Join-Path $Root "dist\windows"
 $InnoScript = Join-Path $Root "packaging\windows\inno\KyMoRem.iss"
 $WixScript = Join-Path $Root "packaging\windows\wix\KyMoRem.wxs"
+$MsiProductVersion = if ($Version -match '^(\d+\.\d+\.\d+)') { $Matches[1] } else { $Version }
 
 New-Item -ItemType Directory -Force -Path $Artifacts, $DistRoot | Out-Null
 
@@ -107,7 +108,7 @@ foreach ($Arch in $Architectures) {
         & $Wix.Source build $WixScript `
             -arch (Wix-Arch $Arch) `
             -d "SourceDir=$Dist" `
-            -d "ProductVersion=$Version" `
+            -d "ProductVersion=$MsiProductVersion" `
             -d "ProductPlatform=$Arch" `
             -out (Join-Path $Artifacts "KyMoRem-$Version-windows-$Arch.msi")
     } else {

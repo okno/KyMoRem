@@ -129,7 +129,7 @@ xdotool getmouselocation
 ```
 
 If `XDG_SESSION_TYPE` is `wayland`, KyMoRem exits with a clear diagnostic by
-default. Use an X11 session for the v0.1.1 Linux client.
+default. Use an X11 session for the v0.2.0-rc1 Linux client.
 
 ### Client exits immediately with a Wayland message
 
@@ -166,6 +166,33 @@ ls -l /run/user/$(id -u)/bus
 ```
 
 The client can run without the tray.
+
+### Modifier Keys Do Not Work
+
+The Linux client must map modifier events to X11 key names:
+
+```text
+VK_LSHIFT -> Shift_L
+VK_RSHIFT -> Shift_R
+VK_LCONTROL -> Control_L
+VK_RCONTROL -> Control_R
+VK_LMENU -> Alt_L
+VK_RMENU -> Alt_R
+```
+
+If combinations still fail, verify `xdotool` and confirm the session is X11.
+Wayland blocks this class of input injection.
+
+### Clipboard Sync Does Not Work
+
+Linux clipboard sync requires `xclip` or `xsel`:
+
+```bash
+sudo apt install xclip xsel
+```
+
+Enable TEXT in the server UI for text clipboard. Enable FILES as well for
+bounded file transfer.
 
 ### Pointer gets stuck on remote
 

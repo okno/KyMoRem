@@ -11,5 +11,4 @@ fi
 exec "$PYTHON" "$DIR/bin/kymorem_client.py" \
   --bind "${KYMOREM_BIND:-0.0.0.0}" \
   --port "${KYMOREM_PORT:-54865}" \
-  --name "${KYMOREM_NAME:-$(hostname)}" \
-  --token "${KYMOREM_TOKEN:-kymorem-local-default-change-me}"
+  --name "${KYMOREM_NAME:-$(hostname)}"

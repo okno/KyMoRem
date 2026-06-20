@@ -1,6 +1,6 @@
 # Localization
 
-KyMoRem v0.1.1 ships exactly three product localization slots.
+KyMoRem v0.2.0-rc1 ships exactly three product localization slots.
 
 | Slot | Purpose |
 | --- | --- |

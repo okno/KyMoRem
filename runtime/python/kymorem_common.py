@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import socket
 import time
@@ -6,7 +8,7 @@ from typing import Any
 
 
 APP_NAME = "KyMoRem"
-VERSION = "0.1.1"
+VERSION = "0.2.0-rc1"
 APP_SHORT_MARK = "KMR"
 APP_EXTENDED_NAME = "Keyboard Mouse Remote"
 APP_AUTHOR = "Pawel Zorzan Urban AKA okno"
@@ -69,10 +71,16 @@ class ClientConfig:
 
 DEFAULT_CONFIG = {
     "language": "it",
-    "theme": "cyber_noir",
+    "theme": "old_school_x11",
+    "mode": "client",
+    "server_on": False,
     "server_name": "Windows Host",
     "token": DEFAULT_TOKEN,
     "edge": "right",
+    "layout": {
+        "grid_span": 5,
+        "activation_edges": True,
+    },
     "security": {
         "required": True,
         "preferred_suite": "ml-kem-768+psk-hkdf-sha256+aes-256-gcm",
@@ -82,6 +90,10 @@ DEFAULT_CONFIG = {
         "enabled": False,
         "max_bytes": 1048576,
         "text_only": True,
+        "files_enabled": False,
+        "max_file_bytes": 5242880,
+        "chunk_bytes": 32768,
+        "inbox_dir": "KyMoRem Inbox",
     },
     "discovery": {
         "enabled": True,
@@ -105,6 +117,10 @@ DEFAULT_CONFIG = {
             "host": DEFAULT_CLIENT_HOST,
             "port": PORT,
             "position": "right",
+            "x": 1,
+            "y": 0,
+            "enabled": True,
+            "source": "manual",
         }
     ],
 }

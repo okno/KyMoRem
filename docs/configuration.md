@@ -13,7 +13,9 @@ Example:
 ```json
 {
   "language": "it",
-  "theme": "cyber_noir",
+  "theme": "old_school_x11",
+  "mode": "client",
+  "server_on": false,
   "server_name": "Windows Host",
   "token": "replace-with-a-long-shared-token",
   "edge": "right",
@@ -25,7 +27,11 @@ Example:
   "clipboard": {
     "enabled": false,
     "max_bytes": 1048576,
-    "text_only": true
+    "text_only": true,
+    "files_enabled": false,
+    "max_file_bytes": 5242880,
+    "chunk_bytes": 32768,
+    "inbox_dir": "KyMoRem Inbox"
   },
   "discovery": {
     "enabled": true,
@@ -56,6 +62,12 @@ Example:
 
 Restart KyMoRem after editing.
 
+Clipboard text sync requires `clipboard.enabled=true`. File transfer also
+requires `clipboard.files_enabled=true`. Incoming files are saved to
+`Downloads/KyMoRem Inbox` on Windows and `~/KyMoRem Inbox` on Linux. File chunks
+stay below the secure frame limit and each file is bounded by
+`clipboard.max_file_bytes`.
+
 The placeholder `kymorem-local-default-change-me` is a development marker, not
 a deployment secret. The runtime refuses it unless
 `KYMOREM_ALLOW_DEFAULT_TOKEN=1` is set for diagnostics.
@@ -71,6 +83,14 @@ KYMOREM_NAME=right-side-linux
 KYMOREM_TOKEN=replace-with-a-long-shared-token
 DISPLAY=:0
 XAUTHORITY=$HOME/.Xauthority
+```
+
+For daemon deployments prefer a protected token file and `--token-file` so the
+shared secret is not visible in process listings:
+
+```bash
+sudo install -m 0640 -o root -g linux /path/to/token /opt/kymorem/.token
+/opt/kymorem/kymorem_client.py --bind 0.0.0.0 --port 54865 --token-file /opt/kymorem/.token
 ```
 
 Installed client path:
@@ -95,4 +115,4 @@ en  English
 ch  Swiss slot
 ```
 
-No other localization files are part of the v0.1.1 public package.
+No other localization files are part of the v0.2.0-rc1 public package.

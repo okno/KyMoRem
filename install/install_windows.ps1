@@ -20,7 +20,9 @@ $ConfigDir = Join-Path $env:APPDATA "KyMoRem"
 New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 @{
     language = "it"
-    theme = "cyber_noir"
+    theme = "old_school_x11"
+    mode = "client"
+    server_on = $false
     server_name = "Windows Host"
     token = "kymorem-local-default-change-me"
     edge = "right"
@@ -33,6 +35,10 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
         enabled = $false
         max_bytes = 1048576
         text_only = $true
+        files_enabled = $false
+        max_file_bytes = 5242880
+        chunk_bytes = 32768
+        inbox_dir = "KyMoRem Inbox"
     }
     discovery = @{
         enabled = $true

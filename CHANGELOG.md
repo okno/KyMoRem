@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.0-rc1
+
+Release candidate for the Windows host to Linux X11 client path.
+
+### Added
+
+- Sanitized README screenshot for the RC1 routing console.
+- Direct Windows client mode through `KyMoRem.exe --client`.
+- Proportional pointer entry on the destination display.
+- Input queue for remote keyboard, mouse button and wheel forwarding.
+- Active input tracking on clients for safer release handling.
+- Refreshed IT, EN and CH quick-start documentation.
+
+### Changed
+
+- Default runtime theme for new installs is `old_school_x11`.
+- Edge routing activates only when a client is configured for that side.
+- Windows mouse movement is no longer suppressed while remote control is active;
+  movement is converted to remote delta frames by the control loop.
+- Linux release handling clears only active inputs plus safety modifiers instead
+  of sending broad key-up sweeps.
+
+### Verified
+
+- Windows host to Linux X11 mouse movement after edge crossing.
+- X11 key events for Shift, letter and function-key routing.
+- X11 button press/release events.
+- `Ctrl+Esc` emergency release.
+
 ## 0.1.1
 
 Security and identity hardening release.

@@ -38,7 +38,9 @@ def main() -> int:
     config_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "language": "it",
-        "theme": "cyber_noir",
+        "theme": "old_school_x11",
+        "mode": "client",
+        "server_on": False,
         "server_name": "Windows Host",
         "token": token,
         "edge": "right",
@@ -51,6 +53,10 @@ def main() -> int:
             "enabled": False,
             "max_bytes": 1048576,
             "text_only": True,
+            "files_enabled": False,
+            "max_file_bytes": 5242880,
+            "chunk_bytes": 32768,
+            "inbox_dir": "KyMoRem Inbox",
         },
         "discovery": {
             "enabled": True,

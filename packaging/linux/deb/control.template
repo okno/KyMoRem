@@ -5,7 +5,7 @@ Priority: optional
 Architecture: @ARCH@
 Maintainer: Pawel Zorzan Urban AKA okno <okno@users.noreply.github.com>
 Homepage: https://github.com/okno/KyMoRem
-Depends: libc6
+Depends: libc6, xclip | xsel
 Description: KyMoRem - Keyboard Mouse Remote
  LAN keyboard and pointer sharing for Windows, macOS, Linux and Android.
  Italian is the primary installer language; English and CH are included.

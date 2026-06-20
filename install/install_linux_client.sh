@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_DIR="/opt/kymorem"
 PORT="${KYMOREM_PORT:-54865}"
-NAME="${KYMOREM_NAME:-linux-iMac}"
+NAME="${KYMOREM_NAME:-linux-client}"
 USER_NAME="${SUDO_USER:-$USER}"
 USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 
@@ -35,7 +35,7 @@ kill_kymorem_port_owner "54866" udp
 
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update
-  apt-get install -y python3 python3-venv python3-pip xdotool x11-utils psmisc yad libnotify-bin
+  apt-get install -y python3 python3-venv python3-pip xdotool x11-utils xclip xsel psmisc yad libnotify-bin
   apt-get purge -y barrier barrier-common >/dev/null 2>&1 || true
   apt-get autoremove -y >/dev/null 2>&1 || true
 fi
@@ -72,7 +72,11 @@ set -euo pipefail
 export DISPLAY="\${DISPLAY:-:0}"
 export XAUTHORITY="\${XAUTHORITY:-$USER_HOME/.Xauthority}"
 pkill -f "$APP_DIR/kymorem_client.py" >/dev/null 2>&1 || true
-exec "$APP_DIR/venv/bin/python" "$APP_DIR/kymorem_client.py" --bind 0.0.0.0 --port "$PORT" --name "$NAME" --token "\${KYMOREM_TOKEN:-kymorem-local-default-change-me}"
+if [ -f "$APP_DIR/.token" ]; then
+  exec "$APP_DIR/venv/bin/python" "$APP_DIR/kymorem_client.py" --bind 0.0.0.0 --port "$PORT" --name "$NAME" --token-file "$APP_DIR/.token"
+fi
+export KYMOREM_TOKEN="\${KYMOREM_TOKEN:-kymorem-local-default-change-me}"
+exec "$APP_DIR/venv/bin/python" "$APP_DIR/kymorem_client.py" --bind 0.0.0.0 --port "$PORT" --name "$NAME"
 EOF
 chmod 0755 "$APP_DIR/start-client.sh"
 

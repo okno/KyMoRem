@@ -9,7 +9,8 @@ if [ ! -x "$PYTHON" ]; then
   PYTHON="${KYMOREM_PYTHON:-/usr/bin/python3}"
 fi
 
-"$PYTHON" - "$DIR/bin" "$HOST" "$PORT" "${KYMOREM_TOKEN:-kymorem-local-default-change-me}" <<'PY'
+KYMOREM_TEST_TOKEN="${KYMOREM_TOKEN:-kymorem-local-default-change-me}" "$PYTHON" - "$DIR/bin" "$HOST" "$PORT" <<'PY'
+import os
 import socket
 import sys
 
@@ -19,7 +20,7 @@ from kymorem_crypto import secure_connect
 
 host = sys.argv[2]
 port = int(sys.argv[3])
-token = sys.argv[4]
+token = os.environ["KYMOREM_TEST_TOKEN"]
 
 with socket.create_connection((host, port), timeout=5) as sock:
     sock.settimeout(5)

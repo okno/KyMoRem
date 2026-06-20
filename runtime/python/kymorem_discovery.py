@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import platform
 import socket
@@ -7,6 +9,9 @@ from typing import Callable
 
 from kymorem_common import APP_NAME, PORT, VERSION, frame
 from kymorem_crypto import DISCOVERY_INTERVAL, DISCOVERY_PORT, crypto_capabilities, decrypt_discovery, encrypt_discovery
+
+DISCOVERY_RATE_WINDOW = 1.0
+DISCOVERY_MAX_DATAGRAMS_PER_WINDOW = 8
 
 
 def local_ip_hint() -> str:
@@ -66,6 +71,7 @@ class DiscoveryListener:
         self.on_announce = on_announce
         self.stop = threading.Event()
         self.thread: threading.Thread | None = None
+        self.rate: dict[str, tuple[float, int]] = {}
 
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
@@ -84,9 +90,22 @@ class DiscoveryListener:
             while not self.stop.is_set():
                 try:
                     data, addr = sock.recvfrom(65535)
+                    if not self._allow(addr[0]):
+                        continue
                     payload = decrypt_discovery(self.token, data)
                     self.on_announce(payload, addr)
                 except socket.timeout:
                     continue
                 except Exception:
                     continue
+
+    def _allow(self, host: str) -> bool:
+        now = time.monotonic()
+        start, count = self.rate.get(host, (now, 0))
+        if now - start > DISCOVERY_RATE_WINDOW:
+            self.rate[host] = (now, 1)
+            return True
+        if count >= DISCOVERY_MAX_DATAGRAMS_PER_WINDOW:
+            return False
+        self.rate[host] = (start, count + 1)
+        return True

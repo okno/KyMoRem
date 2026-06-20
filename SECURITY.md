@@ -7,11 +7,12 @@ high-trust endpoint.
 
 | Version | Supported |
 | --- | --- |
+| 0.2.0-rc1 | Active release-candidate support |
 | 0.1.x | Best-effort technical seed support |
 
 ## Current Security Model
 
-KyMoRem v0.1.1 protects sessions with:
+KyMoRem v0.2.0-rc1 protects sessions with:
 
 - shared token required by discovery and TCP session establishment;
 - encrypted UDP discovery payloads on `54866/udp`;

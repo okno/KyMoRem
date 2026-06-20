@@ -21,7 +21,7 @@ confusion. The technical matrix is in
 
 ## Which platforms work today?
 
-Release-grade path in v0.1.1:
+Release-grade path in v0.2.0-rc1:
 
 - Windows x64 host with Cyber Noir UI and system tray.
 - Linux x64 X11 client with `xdotool` input injection.
@@ -52,7 +52,7 @@ does not have `DISPLAY`, `XAUTHORITY` or the user DBus session.
 
 ## Does Wayland work?
 
-Not as a full input-injection target in v0.1.1. Wayland blocks global input
+Not as a full input-injection target in v0.2.0-rc1. Wayland blocks global input
 injection in many compositors. The Linux client detects Wayland and exits with a
 clear diagnostic unless an explicit diagnostic override is set.
 
@@ -81,5 +81,5 @@ ${XDG_RUNTIME_DIR:-/tmp/kymorem-$UID}/kymorem-tray.log
 
 ## Which languages are included?
 
-Only IT, EN and CH are included in v0.1.1 runtime strings, packaging metadata
+Only IT, EN and CH are included in v0.2.0-rc1 runtime strings, packaging metadata
 and localized documentation.
