@@ -674,94 +674,35 @@ class RemoteLink:
             self.disconnect()
 
 
-class ThemedSelect(tk.Button):
+class ThemedSelect(ttk.Combobox):
     def __init__(self, parent, values, width=14, textvariable=None):
         self.variable = textvariable or tk.StringVar(value=values[0] if values else "")
-        self.callbacks = []
         self.values = list(values)
-        self.popup = None
         super().__init__(
             parent,
             textvariable=self.variable,
-            command=self._toggle_popup,
+            values=self.values,
+            state="readonly",
             width=width,
-            anchor="w",
-            justify="left",
-            bg=CYBER["panel2"],
-            fg=CYBER["text"],
-            activebackground=CYBER["cyan_dim"],
-            activeforeground=CYBER["text"],
-            highlightthickness=1,
-            highlightbackground=CYBER["cyan"],
-            highlightcolor=CYBER["cyan"],
-            relief="flat",
-            padx=8,
-            pady=2,
+            style="Kmr.TCombobox",
             font=("Consolas", 10, "bold"),
         )
-
-    def bind(self, sequence=None, func=None, add=None):
-        if sequence == "<<ComboboxSelected>>" and func is not None:
-            self.callbacks.append(func)
-            return None
-        return super().bind(sequence, func, add)
+        self.configure(takefocus=True, exportselection=False)
+        self.bind("<Button-1>", self._open_dropdown)
+        self.bind("<Alt-Down>", self._open_dropdown, add="+")
+        self.bind("<F4>", self._open_dropdown, add="+")
 
     def set_values(self, values) -> None:
         self.values = list(values)
+        self.configure(values=self.values)
 
-    def _toggle_popup(self, _event=None):
-        if self.popup and self.popup.winfo_exists():
-            self._close_popup()
-        else:
-            self._open_popup()
-        return "break"
-
-    def _open_popup(self) -> None:
-        self._close_popup()
-        popup = tk.Toplevel(self)
-        self.popup = popup
-        popup.overrideredirect(True)
-        popup.configure(bg=CYBER["line"])
-        popup.transient(self.winfo_toplevel())
+    def _open_dropdown(self, _event=None):
+        self.focus_set()
         try:
-            popup.attributes("-topmost", True)
+            self.tk.call("ttk::combobox::Post", self._w)
         except tk.TclError:
-            pass
-        width = max(self.winfo_width(), 180)
-        x = self.winfo_pointerx()
-        y = self.winfo_pointery() + self.winfo_height() + 4
-        popup.geometry(f"{width}x{max(1, len(self.values)) * 28}+{x}+{y}")
-        for value in self.values:
-            row = tk.Label(
-                popup,
-                text=value,
-                anchor="w",
-                bg=CYBER["panel2"],
-                fg=CYBER["text"],
-                padx=10,
-                pady=5,
-                font=("Consolas", 10, "bold"),
-            )
-            row.pack(fill="x", padx=1, pady=(1, 0))
-            row.bind("<Enter>", lambda _event, widget=row: widget.configure(bg=CYBER["cyan_dim"], fg=CYBER["text"]))
-            row.bind("<Leave>", lambda _event, widget=row: widget.configure(bg=CYBER["panel2"], fg=CYBER["text"]))
-            row.bind("<Button-1>", lambda _event, item=value: self._select(item))
-        popup.bind("<Escape>", lambda _event: self._close_popup())
-        popup.focus_force()
-
-    def _close_popup(self) -> None:
-        if self.popup and self.popup.winfo_exists():
-            self.popup.destroy()
-        self.popup = None
-
-    def _select(self, value) -> None:
-        self.variable.set(value)
-        self._close_popup()
-        for callback in list(self.callbacks):
-            callback(None)
-
-    def get(self):
-        return self.variable.get()
+            self.event_generate("<Alt-Down>")
+        return "break"
 
     def set(self, value) -> None:
         self.variable.set(value)
