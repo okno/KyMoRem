@@ -17,6 +17,8 @@ X11 client runtime.
 - Direct Windows client mode is available with `KyMoRem.exe --client`.
 - Default runtime theme for new installs is `old_school_x11`.
 - README now includes a sanitized RC1 screenshot.
+- Runtime language switching updates the UI immediately and uses clean display
+  labels: `Italiano`, `English`, `Swiss`.
 - IT, EN and CH quick-start documentation has been refreshed.
 
 ## Verified RC Path

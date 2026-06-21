@@ -16,6 +16,9 @@ Release candidate for the Windows host to Linux X11 client path.
 ### Changed
 
 - Default runtime theme for new installs is `old_school_x11`.
+- Runtime language switching now rebuilds the UI immediately and shows clean
+  language labels: `Italiano`, `English`, `Swiss`.
+- The README screenshot is loaded from root `screenshot.png`.
 - Edge routing activates only when a client is configured for that side.
 - Windows mouse movement is no longer suppressed while remote control is active;
   movement is converted to remote delta frames by the control loop.

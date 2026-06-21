@@ -9,6 +9,8 @@ KyMoRem v0.2.0-rc1 ships exactly three product localization slots.
 | `ch` | Swiss slot |
 
 No additional language slot is part of the public package.
+The runtime selector shows human labels only: `Italiano`, `English` and
+`Swiss`. Prefixes such as `IT=`, `EN=` or `CH=` are not part of the UI.
 
 ## Repository Mapping
 

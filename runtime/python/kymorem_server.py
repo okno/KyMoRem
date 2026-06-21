@@ -346,7 +346,7 @@ THEMES = {
 
 MODE_LABELS = {"client": "Client", "server": "Server"}
 MODE_VALUES = {value: key for key, value in MODE_LABELS.items()}
-LANG_LABELS = {"it": "IT=Italiano", "en": "EN=English", "ch": "CH=Swiss"}
+LANG_LABELS = {"it": "Italiano", "en": "English", "ch": "Swiss"}
 LANG_VALUES = {value: key for key, value in LANG_LABELS.items()}
 THEME_LABELS = {key: key.replace("_", " ").title() for key in THEMES}
 THEME_VALUES = {value: key for key, value in THEME_LABELS.items()}
@@ -562,7 +562,7 @@ def load_config() -> dict:
         config["clients"] = normalized_clients
         changed = True
     if config.get("language") not in TEXT:
-        config["language"] = "ch"
+        config["language"] = "it"
         changed = True
     if config.get("mode") not in {"server", "client"}:
         config["mode"] = "client"
@@ -1216,10 +1216,10 @@ class KyMoRemApp:
         self._neon_button(controls, self.text["release"], self.engine.release, CYBER["yellow"]).pack(side="left", padx=8)
         self._neon_button(controls, self.text["test"], lambda: self.link.send("pulse"), CYBER["cyan"]).pack(side="left", padx=8)
 
-        tk.Label(right, text="NODE STATUS", fg=CYBER["pink"], bg=CYBER["panel"], font=("Consolas", 15, "bold")).pack(anchor="w", padx=18, pady=(18, 4))
+        tk.Label(right, text=self.text["node_status"].upper(), fg=CYBER["pink"], bg=CYBER["panel"], font=("Consolas", 15, "bold")).pack(anchor="w", padx=18, pady=(18, 4))
         self.status = tk.Label(
             right,
-            text="BOOT // READY",
+            text=self.text["boot_ready"].upper(),
             fg=CYBER["acid"],
             bg=CYBER["panel2"],
             font=("Consolas", 12, "bold"),
@@ -1230,7 +1230,7 @@ class KyMoRemApp:
 
         self.client_badge = tk.Label(
             right,
-            text=f"RIGHT NODE // {self._client_host()}",
+            text=self._client_badge_text(),
             fg=CYBER["cyan"],
             bg=CYBER["panel"],
             font=("Consolas", 10, "bold"),
@@ -1239,7 +1239,7 @@ class KyMoRemApp:
 
         self.discovery_badge = tk.Label(
             right,
-            text="DISCOVERY // OFF" if not self.server_active else "DISCOVERY // ARMED",
+            text=self.text["discovery_off"].upper() if not self.server_active else self.text["discovery_armed"].upper(),
             fg=CYBER["muted"],
             bg=CYBER["panel"],
             font=("Consolas", 9, "bold"),
@@ -1257,7 +1257,7 @@ class KyMoRemApp:
         )
         self.signature_badge.pack(anchor="w", padx=18, pady=(0, 12))
 
-        tk.Label(right, text="CLIENT MAP", fg=CYBER["cyan"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(0, 6))
+        tk.Label(right, text=self.text["client_map"].upper(), fg=CYBER["cyan"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(0, 6))
         self.client_list = tk.Listbox(
             right,
             height=7,
@@ -1279,10 +1279,10 @@ class KyMoRemApp:
         self.client_host_var = tk.StringVar()
         self.client_port_var = tk.StringVar(value=str(PORT))
         self.client_position_var = tk.StringVar(value="right")
-        self._field(form, "NOME", self.client_name_var, 0)
-        self._field(form, "IP", self.client_host_var, 1)
-        self._field(form, "PORTA", self.client_port_var, 2)
-        tk.Label(form, text="POS", fg=CYBER["muted"], bg=CYBER["panel"], font=("Consolas", 8, "bold")).grid(row=3, column=0, sticky="w", pady=2)
+        self._field(form, self.text["name"], self.client_name_var, 0)
+        self._field(form, self.text["ip"], self.client_host_var, 1)
+        self._field(form, self.text["port"], self.client_port_var, 2)
+        tk.Label(form, text=self.text["position"].upper(), fg=CYBER["muted"], bg=CYBER["panel"], font=("Consolas", 8, "bold")).grid(row=3, column=0, sticky="w", pady=2)
         self.position_box = ThemedSelect(
             form,
             values=["right", "left", "up", "down"],
@@ -1294,39 +1294,39 @@ class KyMoRemApp:
 
         client_buttons = tk.Frame(right, bg=CYBER["panel"])
         client_buttons.pack(fill="x", padx=16, pady=(0, 10))
-        self._mini_button(client_buttons, "ADD", self._add_manual_client, CYBER["acid"]).grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-        self._mini_button(client_buttons, "SAVE", self._save_selected_client, CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
-        self._mini_button(client_buttons, "DEL", self._delete_selected_client, CYBER["red"]).grid(row=0, column=2, padx=2, pady=2, sticky="ew")
-        self._mini_button(client_buttons, "USE", self._connect, CYBER["yellow"]).grid(row=0, column=3, padx=2, pady=2, sticky="ew")
+        self._mini_button(client_buttons, self.text["add"].upper(), self._add_manual_client, CYBER["acid"]).grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        self._mini_button(client_buttons, self.text["save"].upper(), self._save_selected_client, CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        self._mini_button(client_buttons, self.text["delete"].upper(), self._delete_selected_client, CYBER["red"]).grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+        self._mini_button(client_buttons, self.text["use"].upper(), self._connect, CYBER["yellow"]).grid(row=0, column=3, padx=2, pady=2, sticky="ew")
         for col in range(4):
             client_buttons.columnconfigure(col, weight=1)
 
         move_pad = tk.Frame(right, bg=CYBER["panel"])
         move_pad.pack(fill="x", padx=16, pady=(0, 12))
-        self._mini_button(move_pad, "UP", lambda: self._move_selected(0, -1), CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
-        self._mini_button(move_pad, "LEFT", lambda: self._move_selected(-1, 0), CYBER["cyan"]).grid(row=1, column=0, padx=2, pady=2, sticky="ew")
-        self._mini_button(move_pad, "RIGHT", lambda: self._move_selected(1, 0), CYBER["cyan"]).grid(row=1, column=2, padx=2, pady=2, sticky="ew")
-        self._mini_button(move_pad, "DOWN", lambda: self._move_selected(0, 1), CYBER["cyan"]).grid(row=2, column=1, padx=2, pady=2, sticky="ew")
+        self._mini_button(move_pad, self.text["up"].upper(), lambda: self._move_selected(0, -1), CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        self._mini_button(move_pad, self.text["left"].upper(), lambda: self._move_selected(-1, 0), CYBER["cyan"]).grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+        self._mini_button(move_pad, self.text["right"].upper(), lambda: self._move_selected(1, 0), CYBER["cyan"]).grid(row=1, column=2, padx=2, pady=2, sticky="ew")
+        self._mini_button(move_pad, self.text["down"].upper(), lambda: self._move_selected(0, 1), CYBER["cyan"]).grid(row=2, column=1, padx=2, pady=2, sticky="ew")
         for col in range(3):
             move_pad.columnconfigure(col, weight=1)
 
-        tk.Label(right, text="CLIPBOARD", fg=CYBER["cyan"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(0, 6))
+        tk.Label(right, text=self.text["clipboard"].upper(), fg=CYBER["cyan"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(0, 6))
         clip = self.config.setdefault("clipboard", {})
         self.clipboard_enabled_var = tk.BooleanVar(value=bool(clip.get("enabled", False)))
         self.clipboard_files_var = tk.BooleanVar(value=bool(clip.get("files_enabled", False)))
         checks = tk.Frame(right, bg=CYBER["panel"])
         checks.pack(fill="x", padx=16, pady=(0, 8))
-        self._check(checks, "TEXT", self.clipboard_enabled_var, self._save_clipboard_config).pack(side="left", padx=(0, 8))
-        self._check(checks, "FILES", self.clipboard_files_var, self._save_clipboard_config).pack(side="left")
+        self._check(checks, self.text["text"].upper(), self.clipboard_enabled_var, self._save_clipboard_config).pack(side="left", padx=(0, 8))
+        self._check(checks, self.text["files"].upper(), self.clipboard_files_var, self._save_clipboard_config).pack(side="left")
         clip_buttons = tk.Frame(right, bg=CYBER["panel"])
         clip_buttons.pack(fill="x", padx=16, pady=(0, 12))
-        self._mini_button(clip_buttons, "SEND TEXT", self._send_clipboard_text, CYBER["acid"]).grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-        self._mini_button(clip_buttons, "GET TEXT", self._request_clipboard_text, CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
-        self._mini_button(clip_buttons, "SEND FILES", self._send_clipboard_files, CYBER["yellow"]).grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+        self._mini_button(clip_buttons, self.text["send_text"].upper(), self._send_clipboard_text, CYBER["acid"]).grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        self._mini_button(clip_buttons, self.text["get_text"].upper(), self._request_clipboard_text, CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        self._mini_button(clip_buttons, self.text["send_files"].upper(), self._send_clipboard_files, CYBER["yellow"]).grid(row=0, column=2, padx=2, pady=2, sticky="ew")
         for col in range(3):
             clip_buttons.columnconfigure(col, weight=1)
 
-        tk.Label(right, text="EVENT STREAM", fg=CYBER["yellow"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(6, 8))
+        tk.Label(right, text=self.text["event_stream"].upper(), fg=CYBER["yellow"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(6, 8))
         self.log = tk.Text(
             right,
             width=38,
@@ -1343,7 +1343,7 @@ class KyMoRemApp:
 
         tk.Label(
             self.root,
-            text="CONTROL VECTOR: RIGHT EDGE // RELEASE: Ctrl+Esc // FIND POINTER: Ctrl+Shift+M",
+            text=self.text["footer"],
             fg=CYBER["muted"],
             bg=CYBER["bg"],
             font=("Consolas", 9),
@@ -1381,6 +1381,14 @@ class KyMoRemApp:
         item = client or self._client_config()
         return position_from_grid(int(item.get("x", 1)), int(item.get("y", 0)))
 
+    def _direction_label(self, direction: str) -> str:
+        return self.text.get(direction, direction).upper()
+
+    def _client_badge_text(self, client: dict | None = None) -> str:
+        item = client or self._client_config()
+        direction = self._direction_label(self._client_direction(item))
+        return f"{direction} NODE // {item.get('host')}"
+
     def _token(self) -> str:
         return str(self.config.get("token") or DEFAULT_CONFIG["token"])
 
@@ -1389,7 +1397,7 @@ class KyMoRemApp:
             validate_token(self._token())
             return True
         except CryptoError as exc:
-            self.status.configure(text="TOKEN REQUIRED", fg=CYBER["yellow"])
+            self.status.configure(text=self.text["token_required"].upper(), fg=CYBER["yellow"])
             self._log(f"Token non valido: {exc}")
             return False
 
@@ -1462,20 +1470,20 @@ class KyMoRemApp:
 
     def _start_discovery(self) -> None:
         if not self.server_active:
-            self.discovery_badge.configure(text="DISCOVERY // OFF")
+            self.discovery_badge.configure(text=self.text["discovery_off"].upper())
             return
         if self.discovery_beacon or self.discovery_listener:
             return
         if not self._discovery_enabled():
             self._log("Discovery LAN disattivata da configurazione.")
-            self.discovery_badge.configure(text="DISCOVERY // DISABLED")
+            self.discovery_badge.configure(text=self.text["discovery_disabled"].upper())
             return
         token = self._token()
         try:
             validate_token(token)
         except CryptoError as exc:
             self._log(f"Discovery non avviata: {exc}")
-            self.discovery_badge.configure(text="DISCOVERY // TOKEN REQUIRED")
+            self.discovery_badge.configure(text=self.text["discovery_token_required"].upper())
             return
         name = str(self.config.get("server_name") or os.environ.get("COMPUTERNAME", "Windows"))
         self.discovery_beacon = DiscoveryBeacon(token, "host", name, PORT)
@@ -1495,7 +1503,7 @@ class KyMoRemApp:
         self.discovery_listener = None
         if hasattr(self, "discovery_badge"):
             try:
-                self.discovery_badge.configure(text="DISCOVERY // OFF")
+                self.discovery_badge.configure(text=self.text["discovery_off"].upper())
             except tk.TclError:
                 pass
 
@@ -1625,7 +1633,7 @@ class KyMoRemApp:
             return
         self.selected_client = client_key(clients[index])
         self._load_client_form(clients[index])
-        self.client_badge.configure(text=f"{self._client_direction(clients[index]).upper()} NODE // {clients[index].get('host')}")
+        self.client_badge.configure(text=self._client_badge_text(clients[index]))
         self._refresh_client_list()
         self._draw_layout()
 
@@ -1817,13 +1825,16 @@ class KyMoRemApp:
         self.config["theme"] = self.theme_id
         CYBER.update(THEMES.get(self.theme_id, THEMES["old_school_x11"]))
         self._save_config()
+        self._rebuild_ui()
+        self._log(f"Tema impostato: {self.theme_id}. UI aggiornata.")
+        self._draw_layout()
+
+    def _rebuild_ui(self) -> None:
         for child in self.root.winfo_children():
             child.destroy()
         self.root.configure(bg=CYBER["bg"])
         self._style()
         self._build()
-        self._log(f"Tema impostato: {self.theme_id}. UI aggiornata.")
-        self._draw_layout()
 
     def _change_mode(self, _event=None) -> None:
         mode = MODE_VALUES.get(self.mode_box.get(), "client")
@@ -1845,23 +1856,23 @@ class KyMoRemApp:
             return
         if self.server_active:
             self.server_toggle.configure(
-                text="SERVER OFF",
+                text=self.text["server_off"].upper(),
                 fg=CYBER["red"],
                 activebackground=CYBER["red"],
                 highlightbackground=CYBER["red"],
                 highlightcolor=CYBER["red"],
             )
-            self.status.configure(text="SERVER ON", fg=CYBER["acid"])
+            self.status.configure(text=self.text["server_on"].upper(), fg=CYBER["acid"])
         else:
             self.server_toggle.configure(
-                text="SERVER ON",
+                text=self.text["server_on"].upper(),
                 fg=CYBER["acid"],
                 activebackground=CYBER["acid"],
                 highlightbackground=CYBER["acid"],
                 highlightcolor=CYBER["acid"],
             )
             if not self.link.connected:
-                self.status.configure(text="CLIENT MODE", fg=CYBER["yellow"])
+                self.status.configure(text=self.text["client_mode"].upper(), fg=CYBER["yellow"])
 
     def _set_server_active(self, active: bool) -> None:
         if active:
@@ -1953,23 +1964,34 @@ class KyMoRemApp:
             return
 
         image = Image.open(icon_file)
-        menu = pystray.Menu(
-            pystray.MenuItem("Apri KyMoRem", lambda _icon, _item: self.root.after(0, self._show_window)),
-            pystray.MenuItem("Server ON/OFF", lambda _icon, _item: self.root.after(0, self._toggle_server)),
-            pystray.MenuItem("Connetti client", lambda _icon, _item: self.root.after(0, self._connect)),
-            pystray.MenuItem("Prendi controllo", lambda _icon, _item: self.root.after(0, self.engine.take)),
-            pystray.MenuItem("Rilascia", lambda _icon, _item: self.root.after(0, self.engine.release)),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Esci", lambda _icon, _item: self.root.after(0, self._quit)),
-        )
         self.tray_icon = pystray.Icon(
             "KyMoRem",
             image,
             "KyMoRem // Right Edge Router",
-            menu,
+            self._tray_menu(),
         )
         self.tray_icon.run_detached()
         self._log("Tray Windows attiva.")
+
+    def _tray_menu(self):
+        return pystray.Menu(
+            pystray.MenuItem(self.text["open_app"], lambda _icon, _item: self.root.after(0, self._show_window)),
+            pystray.MenuItem("Server ON/OFF", lambda _icon, _item: self.root.after(0, self._toggle_server)),
+            pystray.MenuItem(self.text["connect"], lambda _icon, _item: self.root.after(0, self._connect)),
+            pystray.MenuItem(self.text["take"], lambda _icon, _item: self.root.after(0, self.engine.take)),
+            pystray.MenuItem(self.text["release"], lambda _icon, _item: self.root.after(0, self.engine.release)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(self.text["exit"], lambda _icon, _item: self.root.after(0, self._quit)),
+        )
+
+    def _refresh_tray_menu(self) -> None:
+        if not self.tray_icon or pystray is None:
+            return
+        try:
+            self.tray_icon.menu = self._tray_menu()
+            self.tray_icon.update_menu()
+        except Exception:
+            pass
 
     def _hide_to_tray(self) -> None:
         if self.tray_icon:
@@ -2019,7 +2041,7 @@ class KyMoRemApp:
             cell_w = max(cell_w, node_w + gap)
             center_x = max(node_w // 2 + 24, min(w - node_w // 2 - 24, w // 2 + (node_w + gap) // 2))
         server = (center_x - node_w // 2, center_y - node_h // 2, center_x + node_w // 2, center_y + node_h // 2)
-        server_state = "SERVER ON" if self.server_active else "CLIENT MODE"
+        server_state = self.text["server_on"].upper() if self.server_active else self.text["client_mode"].upper()
         self._node_card(server, "SERVER", server_state, CYBER["cyan"], active=self.server_active and not self.engine.remote)
         self._portal(center_x, center_y, CYBER["cyan"])
 
@@ -2048,11 +2070,11 @@ class KyMoRemApp:
             )
 
         if not self.server_active:
-            route_text = "CLIENT MODE // SERVER OFF"
+            route_text = self.text["client_mode_route"].upper()
         else:
-            route_text = "LINK ONLINE // EDGE ROUTING ARMED" if self.link.connected else "LINK OFFLINE // SELECT OR DISCOVER NODE"
+            route_text = self.text["link_online_route"].upper() if self.link.connected else self.text["link_offline_route"].upper()
         if self.engine.remote:
-            route_text = "REMOTE CONTROL ACTIVE // RETURN VIA LEFT EDGE"
+            route_text = self.text["remote_route"].upper()
         c.create_text(w // 2, max(28, center_y + node_h // 2 + 42), text=route_text, fill=link_color if self.link.connected else CYBER["muted"], font=("Consolas", 13, "bold"))
         if self.pointer_hint and time.monotonic() < self.pointer_hint_until:
             hint = self.pointer_hint
@@ -2065,7 +2087,7 @@ class KyMoRemApp:
         c.create_text(
             w // 2,
             h - 28,
-            text=f"{self.local_ip}  >>>  {self._client_host()}:{self._client_port()} // selected {self._client_direction()}",
+            text=f"{self.local_ip}  >>>  {self._client_host()}:{self._client_port()} // {self.text['selected']} {self._client_direction()}",
             fill=CYBER["muted"],
             font=("Consolas", 10),
         )
@@ -2073,8 +2095,8 @@ class KyMoRemApp:
     def _draw_cyber_grid(self, w: int, h: int) -> None:
         c = self.canvas
         c.create_rectangle(18, 18, w - 18, h - 18, outline=CYBER["line"], width=1)
-        c.create_text(w - 28, 32, text="Client Layout", anchor="e", fill=CYBER["muted"], font=("Consolas", 10, "bold"))
-        c.create_text(28, 32, text=f"{APP_SHORT_MARK} Routing Map", anchor="w", fill=CYBER["muted"], font=("Consolas", 10, "bold"))
+        c.create_text(w - 28, 32, text=self.text["client_layout"], anchor="e", fill=CYBER["muted"], font=("Consolas", 10, "bold"))
+        c.create_text(28, 32, text=self.text["routing_map"], anchor="w", fill=CYBER["muted"], font=("Consolas", 10, "bold"))
 
     def _beveled_rect(self, box: tuple[int, int, int, int], outline: str, fill: str) -> None:
         x1, y1, x2, y2 = box
@@ -2086,7 +2108,7 @@ class KyMoRemApp:
         self._beveled_rect(box, color, CYBER["panel"])
         c.create_text(x1 + 16, y1 + 22, text=title, anchor="w", fill=color, font=("Consolas", 14, "bold"))
         c.create_text(x1 + 16, y1 + 50, text=subtitle[:32], anchor="w", fill=CYBER["text"], font=("Consolas", 9, "bold"))
-        state = "ONLINE" if active else "STANDBY"
+        state = self.text["online"].upper() if active else self.text["standby"].upper()
         pill = CYBER["acid"] if active else CYBER["muted"]
         c.create_rectangle(x1 + 16, y2 - 38, x1 + 104, y2 - 14, fill=CYBER["panel2"], outline=pill, width=1)
         c.create_text(x1 + 60, y2 - 26, text=state, anchor="center", fill=pill, font=("Consolas", 9, "bold"))
@@ -2109,7 +2131,7 @@ class KyMoRemApp:
             return
         if not self._token_valid():
             return
-        self.client_badge.configure(text=f"{self._client_direction().upper()} NODE // {self._client_host()}")
+        self.client_badge.configure(text=self._client_badge_text())
         self.link.connect(self._client_host(), self._client_port(), self._token(), self._identity())
 
     def _auto_connect(self) -> None:
@@ -2130,8 +2152,12 @@ class KyMoRemApp:
     def _change_lang(self, _event=None) -> None:
         self.lang = LANG_VALUES.get(self.lang_box.get(), "it")
         self.config["language"] = self.lang
-        (app_dir() / "config.json").write_text(json.dumps(self.config, indent=2), encoding="utf-8")
-        self._log(f"Lingua impostata: {self.lang}. Riavvia la UI per aggiornare tutte le etichette.")
+        self.text = TEXT.get(self.lang, TEXT["it"])
+        self._save_config()
+        self._refresh_tray_menu()
+        self._rebuild_ui()
+        self._log(self.text["language_set"].format(label=LANG_LABELS.get(self.lang, self.lang)))
+        self._draw_layout()
 
     def _show_pointer_hint(self, payload: dict) -> None:
         self.pointer_hint = payload
@@ -2160,7 +2186,7 @@ class KyMoRemApp:
                 event, subject, body = payload
                 self._relay_event(event, subject, body)
             elif kind == "remote":
-                self.status.configure(text="REMOTE" if payload else self.text["status_connected"])
+                self.status.configure(text=self.text["remote"].upper() if payload else self.text["status_connected"])
                 self._draw_layout()
             elif kind == "pointer":
                 self._show_pointer_hint(payload)
@@ -2174,7 +2200,7 @@ class KyMoRemApp:
                 if self.server_active:
                     self.status.configure(text=self.text["status_disconnected"], fg="#ff5c7a")
                 else:
-                    self.status.configure(text="CLIENT MODE", fg=CYBER["yellow"])
+                    self.status.configure(text=self.text["client_mode"].upper(), fg=CYBER["yellow"])
                 self._draw_layout()
         self.root.after(80, self._tick)
 

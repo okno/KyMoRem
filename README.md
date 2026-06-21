@@ -9,7 +9,7 @@ KyMoRem follows the screen-edge workflow used by KVM tools such as Barrier, but
 it does not copy Barrier source code and does not implement the Barrier/Synergy
 wire protocol.
 
-![KyMoRem RC1 routing console](docs/assets/screenshots/kymorem-rc1-main.png)
+![KyMoRem RC1 routing console](screenshot.png)
 
 ## Release Candidate
 
@@ -111,7 +111,7 @@ install/                     Practical install scripts
 packaging/                   Release packaging recipes
 docs/                        Technical and operational documentation
 docs/localized/              IT, EN and CH quick-start guides
-docs/assets/screenshots/     README screenshots
+screenshot.png                README screenshot
 assets/themes/               Theme tokens
 ```
 
