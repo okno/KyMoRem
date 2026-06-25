@@ -44,6 +44,20 @@ enters the destination display at 75 percent of the client height.
 
 Use `Ctrl+Esc` on the host or the client return edge to leave remote mode.
 
+## Always-Listening Client
+
+When the KyMoRem client is running, the target stays ready to receive remote
+input. The Linux X11 client disables session blanking/DPMS, requests a systemd
+idle/sleep inhibitor when available, and forces the display on before injecting
+remote mouse or keyboard events. The direct Windows client uses
+`SetThreadExecutionState` to keep the system and display required while the
+listener is active.
+
+KyMoRem does not bypass lock screens, passwords, firmware sleep or Wake-on-LAN
+requirements. If a machine is already fully suspended at hardware level, the
+network listener cannot run; configure OS or firmware wake policy separately for
+that case.
+
 ## Test
 
 ```bash

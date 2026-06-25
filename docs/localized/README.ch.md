@@ -46,6 +46,21 @@ Client-Hoehe.
 Mit `Ctrl+Esc` auf dem Host oder ueber die Rueckkehrkante des Clients wird die
 Remote-Steuerung beendet.
 
+## Client immer empfangsbereit
+
+Wenn der KyMoRem-Client laeuft, bleibt das Zielsystem fuer Remote-Eingaben
+bereit. Der Linux-X11-Client deaktiviert Session-Blanking/DPMS, fordert wenn
+verfuegbar einen systemd-Inhibitor fuer Idle/Sleep an und schaltet das Display
+vor Maus- oder Tastaturinjektion wieder ein. Der direkte Windows-Client nutzt
+`SetThreadExecutionState`, damit System und Display waehrend des Listeners
+angefordert bleiben.
+
+KyMoRem umgeht keine Sperrbildschirme, Passwoerter, Firmware-Sleep-Zustaende
+oder Wake-on-LAN-Anforderungen. Wenn ein Rechner bereits hardwareseitig
+vollstaendig suspendiert ist, kann der Netzwerk-Listener nicht laufen; dafuer
+muss die Wake-Policy von Betriebssystem oder Firmware separat konfiguriert
+werden.
+
 ## Test
 
 ```bash

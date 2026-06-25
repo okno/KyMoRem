@@ -30,6 +30,13 @@ Controllo stato:
 systemctl --user status kymorem-client.service
 ```
 
+## Risparmio Energetico
+
+Finche il client standalone e in esecuzione, KyMoRem mantiene il target in
+ascolto: disattiva blanking/DPMS X11, usa `systemd-inhibit` se disponibile e
+forza il display ON prima degli input remoti. Non sblocca sessioni protette e
+non sostituisce Wake-on-LAN per macchine gia sospese a livello hardware.
+
 ## Disinstallazione
 
 ```bash

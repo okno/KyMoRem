@@ -33,6 +33,18 @@ echo "$XDG_SESSION_TYPE"
 tail -n 80 "${KYMOREM_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp/kymorem-$(id -u)}}/kymorem-client.log"
 ```
 
+Wake guard:
+
+```bash
+pgrep -a -f 'systemd-inhibit.*KyMoRem'
+xset q | grep -E 'DPMS|timeout|prefer blanking'
+```
+
+The client is expected to inhibit idle/sleep and wake the display while it is
+running. This keeps the endpoint listening for server mouse and keyboard input.
+It does not unlock a protected session or replace Wake-on-LAN for a machine
+that is already suspended at hardware level.
+
 ## Restart
 
 Linux installed client:

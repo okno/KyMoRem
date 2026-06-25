@@ -24,6 +24,8 @@ RC1 focuses on the practical Windows host to Linux X11 client path:
 - Edge activation only when a client is configured for that side.
 - Proportional pointer entry on the destination display.
 - Remote mouse movement, buttons, wheel and keyboard modifiers.
+- Client wake guard: running clients stay listening, inhibit idle/sleep where
+  the OS allows it, and wake the display before injected mouse/keyboard input.
 - Emergency release with `Ctrl+Esc`.
 - Clipboard text sharing and bounded file transfer.
 - Encrypted TCP session using AES-256-GCM.
@@ -97,6 +99,20 @@ Ctrl+Esc/client edge     ->   release control
 Pointer routing is proportional. For example, leaving the right edge of the
 host at 75 percent of screen height enters the left edge of the client at 75
 percent of the client display height.
+
+## Client Wake Guard
+
+When a KyMoRem client is running, it is treated as an always-listening endpoint.
+The Linux X11 client disables session blanking/DPMS, requests a systemd idle and
+sleep inhibitor when available, and forces the display on before remote pointer
+or keyboard input is injected. The direct Windows client calls
+`SetThreadExecutionState` to keep the system and display required while the
+listener is active.
+
+This does not bypass operating-system lock screens, passwords, firmware sleep
+states or Wake-on-LAN requirements. If the machine is already fully suspended at
+hardware level, the network listener cannot run; configure firmware/OS wake
+policy separately for that case.
 
 ## Repository Layout
 

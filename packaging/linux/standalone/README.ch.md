@@ -30,6 +30,14 @@ Status:
 systemctl --user status kymorem-client.service
 ```
 
+## Energiesparen
+
+Solange der Standalone-Client laeuft, haelt KyMoRem das Ziel empfangsbereit:
+X11-Blanking/DPMS wird deaktiviert, `systemd-inhibit` wird wenn verfuegbar
+genutzt und das Display wird vor Remote-Eingaben eingeschaltet. Gesperrte
+Sitzungen werden nicht entsperrt und Wake-on-LAN fuer bereits hardwareseitig
+suspendierte Rechner wird dadurch nicht ersetzt.
+
 ## Entfernen
 
 ```bash

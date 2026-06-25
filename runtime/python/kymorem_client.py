@@ -51,6 +51,8 @@ MAX_ACTIVE_SESSIONS = 4
 MAX_FRAMES_PER_SECOND = 1200
 MAX_CLIPBOARD_BYTES = 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
+WAKE_PULSE_INTERVAL = 1.0
+WAKE_GUARD_ENV = "KYMOREM_WAKE_GUARD"
 
 KEYS = {
     **{f"VK_{chr(code)}": chr(code).lower() for code in range(ord("A"), ord("Z") + 1)},
@@ -268,6 +270,11 @@ def reset_cursor_shape() -> None:
         )
 
 
+def wake_guard_enabled() -> bool:
+    value = os.environ.get(WAKE_GUARD_ENV, "1").strip().lower()
+    return value not in {"0", "false", "off", "no"}
+
+
 def release_inputs(keys: set[str], buttons: set[str]) -> None:
     for button in sorted(buttons | set(BUTTONS.values())):
         run_xdotool("mouseup", button)
@@ -289,11 +296,14 @@ class ClientAgent:
         self.file_transfers: dict[str, dict] = {}
         self.active_keys: set[str] = set()
         self.active_buttons: set[str] = set()
+        self.wake_guard_process: subprocess.Popen | None = None
+        self.last_wake = 0.0
 
     def serve(self) -> None:
         self._write_pid()
         self._verify_session()
         self._verify_tools()
+        self._start_wake_guard()
         self.discovery.start()
         log(f"{APP_NAME} client {VERSION} by {APP_AUTHOR} listening on {self.bind}:{self.port}")
 
@@ -312,6 +322,7 @@ class ClientAgent:
                     thread.start()
         finally:
             self.discovery.close()
+            self._stop_wake_guard()
 
     def handle(self, conn: socket.socket, addr) -> None:
         log(f"server connected from {addr[0]}:{addr[1]}")
@@ -368,6 +379,8 @@ class ClientAgent:
             self.session_slots.release()
 
     def dispatch(self, link, kind: str, payload: dict) -> None:
+        if kind in {"pulse", "enter", "move", "button", "wheel", "key"}:
+            self.wake_display(force=kind != "move")
         if kind == "hello":
             link.send(frame("status", state="connected", name=self.name))
         elif kind == "pulse":
@@ -454,6 +467,73 @@ class ClientAgent:
                 raise RuntimeError("file transfer size mismatch")
             set_clipboard_files([transfer["path"]])
             link.send(frame("file_ack", transfer_id=transfer_id, state="complete", path=str(transfer["path"])))
+
+    def _start_wake_guard(self) -> None:
+        if not wake_guard_enabled():
+            log(f"wake guard disabled by {WAKE_GUARD_ENV}=0")
+            return
+        self._apply_power_policy()
+        inhibitor = shutil.which("systemd-inhibit")
+        sleeper = shutil.which("sleep")
+        if inhibitor and sleeper:
+            try:
+                self.wake_guard_process = subprocess.Popen(
+                    [
+                        inhibitor,
+                        "--what=idle:sleep:handle-lid-switch",
+                        "--why=KyMoRem client is listening for secure remote input",
+                        "--mode=block",
+                        sleeper,
+                        "infinity",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except OSError as exc:
+                log(f"wake guard inhibitor unavailable: {exc}")
+        log("wake guard active: idle/sleep inhibited where supported and X11 DPMS disabled")
+
+    def _stop_wake_guard(self) -> None:
+        if self.wake_guard_process and self.wake_guard_process.poll() is None:
+            self.wake_guard_process.terminate()
+            try:
+                self.wake_guard_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.wake_guard_process.kill()
+        self.wake_guard_process = None
+
+    def _apply_power_policy(self) -> None:
+        if shutil.which("xset"):
+            for args in (("s", "off"), ("s", "noblank"), ("-dpms",)):
+                subprocess.run(
+                    ["xset", *args],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env_for_x(),
+                    check=False,
+                )
+
+    def wake_display(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self.last_wake < WAKE_PULSE_INTERVAL:
+            return
+        self.last_wake = now
+        if shutil.which("xset"):
+            subprocess.run(
+                ["xset", "dpms", "force", "on"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env_for_x(),
+                check=False,
+            )
+        if shutil.which("xdg-screensaver"):
+            subprocess.run(
+                ["xdg-screensaver", "reset"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env_for_x(),
+                check=False,
+            )
 
     def send_file(self, link, path: Path) -> None:
         size = path.stat().st_size

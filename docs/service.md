@@ -27,8 +27,14 @@ Responsibilities:
 - free the configured TCP and UDP ports;
 - advertise role and capabilities through encrypted discovery;
 - accept only authenticated secure sessions;
+- inhibit idle/sleep where the platform allows it while the listener is active;
+- wake the display before remote mouse or keyboard injection;
 - dispatch input frames through the platform backend;
 - report edge return events and operational errors.
+
+The wake guard is a readiness feature, not an authentication bypass. It does not
+unlock protected sessions and it cannot keep a listener alive after hardware
+suspend unless firmware or OS Wake-on-LAN policy is configured separately.
 
 ## Runtime Flow
 
@@ -36,6 +42,7 @@ Responsibilities:
 client starts
 client kills stale instance
 client binds 54865/tcp
+client starts wake guard / idle inhibitor
 client broadcasts encrypted discovery on 54866/udp
 host discovers role=client
 host opens TCP session
