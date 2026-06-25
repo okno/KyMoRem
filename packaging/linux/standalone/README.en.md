@@ -30,13 +30,6 @@ Check status:
 systemctl --user status kymorem-client.service
 ```
 
-## Power Saving
-
-While the standalone client is running, KyMoRem keeps the target listening:
-it disables X11 blanking/DPMS, uses `systemd-inhibit` when available, and forces
-the display on before remote input. It does not unlock protected sessions and
-does not replace Wake-on-LAN for machines already suspended at hardware level.
-
 ## Uninstall
 
 ```bash

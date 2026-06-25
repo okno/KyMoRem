@@ -8,8 +8,6 @@ X11 client runtime.
 - Edge routing is now configuration-aware: unassigned screen sides do not take
   remote control.
 - Pointer entry is proportional to the destination display resolution.
-- Active clients inhibit idle/sleep where supported and wake the display before
-  remote mouse or keyboard input is injected.
 - Windows host mouse movement remains live while remote control is active.
 - Keyboard, mouse buttons and wheel are captured, queued and forwarded to the
   active client without leaking local input to the host.

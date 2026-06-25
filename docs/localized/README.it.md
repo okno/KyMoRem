@@ -46,20 +46,6 @@ al 75 percento dell'altezza del client.
 Per uscire dalla modalita remota usa `Ctrl+Esc` sull'host o il bordo di ritorno
 del client.
 
-## Client Sempre In Ascolto
-
-Quando il client KyMoRem e in esecuzione, il sistema viene mantenuto pronto a
-ricevere input remoti. Il client Linux X11 disattiva blanking/DPMS della
-sessione, richiede un inibitore systemd per idle/sleep quando disponibile e
-forza il display ON prima di iniettare mouse o tastiera. Il client Windows
-diretto usa `SetThreadExecutionState` per mantenere richiesti sistema e display
-finche il listener e attivo.
-
-KyMoRem non scavalca schermate di blocco, password, sospensione firmware o
-Wake-on-LAN. Se il computer e gia sospeso a livello hardware, il listener di
-rete non puo essere attivo; in quel caso serve configurare wake policy del
-sistema operativo o firmware.
-
 ## Test
 
 ```bash

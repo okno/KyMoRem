@@ -8,8 +8,6 @@ Release candidate for the Windows host to Linux X11 client path.
 
 - Sanitized README screenshot for the RC1 routing console.
 - Direct Windows client mode through `KyMoRem.exe --client`.
-- Client wake guard for Linux X11 and direct Windows clients: active listeners
-  inhibit idle/sleep where supported and wake displays before remote input.
 - Proportional pointer entry on the destination display.
 - Input queue for remote keyboard, mouse button and wheel forwarding.
 - Active input tracking on clients for safer release handling.

@@ -38,9 +38,6 @@ MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
 MOUSEEVENTF_WHEEL = 0x0800
-ES_CONTINUOUS = 0x80000000
-ES_SYSTEM_REQUIRED = 0x00000001
-ES_DISPLAY_REQUIRED = 0x00000002
 
 MAX_MOVE_DELTA = 4096
 MAX_ACTIVE_SESSIONS = 4
@@ -174,14 +171,6 @@ def pointer_location() -> tuple[int, int]:
 def move_pointer(dx: int, dy: int) -> None:
     if dx or dy:
         user32.mouse_event(MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
-
-
-def keep_awake() -> None:
-    kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
-
-
-def clear_awake() -> None:
-    kernel32.SetThreadExecutionState(ES_CONTINUOUS)
 
 
 def ratio(value, fallback: float = 0.5) -> float:
@@ -318,7 +307,6 @@ class WindowsClientAgent:
         self.active_buttons: set[str] = set()
 
     def serve(self) -> None:
-        keep_awake()
         self.discovery.start()
         log(f"{APP_NAME} Windows client {VERSION} by {APP_AUTHOR} listening on {self.bind}:{self.port}")
         try:
@@ -334,7 +322,6 @@ class WindowsClientAgent:
                     threading.Thread(target=self.handle, args=(conn, addr), daemon=True).start()
         finally:
             self.discovery.close()
-            clear_awake()
 
     def handle(self, conn: socket.socket, addr) -> None:
         try:
@@ -375,8 +362,6 @@ class WindowsClientAgent:
                 link.send(frame("error", message=str(exc), event=message.get("type")))
 
     def dispatch(self, link, kind: str, payload: dict) -> None:
-        if kind in {"pulse", "enter", "move", "button", "wheel", "key"}:
-            keep_awake()
         if kind == "hello":
             link.send(frame("status", state="connected", name=self.name))
         elif kind == "pulse":
