@@ -1212,7 +1212,7 @@ class KyMoRemApp:
         self.server_toggle.pack(side="left", padx=(0, 8))
         self._neon_button(controls, self.text["connect"], self._connect, CYBER["cyan"]).pack(side="left", padx=(0, 8))
         self._neon_button(controls, self.text["disconnect"], self.link.disconnect, CYBER["pink"]).pack(side="left", padx=8)
-        self._neon_button(controls, self.text["take"], self.engine.take, CYBER["acid"]).pack(side="left", padx=8)
+        self._neon_button(controls, self.text["take"], self._take_selected, CYBER["acid"]).pack(side="left", padx=8)
         self._neon_button(controls, self.text["release"], self.engine.release, CYBER["yellow"]).pack(side="left", padx=8)
         self._neon_button(controls, self.text["test"], lambda: self.link.send("pulse"), CYBER["cyan"]).pack(side="left", padx=8)
 
@@ -1381,12 +1381,27 @@ class KyMoRemApp:
         item = client or self._client_config()
         return position_from_grid(int(item.get("x", 1)), int(item.get("y", 0)))
 
+    def _client_edges(self, client: dict | None = None) -> list[str]:
+        item = client or self._client_config()
+        x = int(item.get("x", 1))
+        y = int(item.get("y", 0))
+        edges: list[str] = []
+        if x < 0:
+            edges.append("left")
+        elif x > 0:
+            edges.append("right")
+        if y < 0:
+            edges.append("up")
+        elif y > 0:
+            edges.append("down")
+        return edges or [self._client_direction(item)]
+
     def _direction_label(self, direction: str) -> str:
         return self.text.get(direction, direction).upper()
 
     def _client_badge_text(self, client: dict | None = None) -> str:
         item = client or self._client_config()
-        direction = self._direction_label(self._client_direction(item))
+        direction = "/".join(self._direction_label(edge) for edge in self._client_edges(item))
         return f"{direction} NODE // {item.get('host')}"
 
     def _token(self) -> str:
@@ -1796,6 +1811,22 @@ class KyMoRemApp:
             except Exception as exc:
                 self.events.put(("log", f"Invio file fallito {path.name}: {exc}"))
 
+    def _take_selected(self) -> None:
+        client = self._client_config()
+        direction = self._client_edges(client)[0]
+        endpoint = (str(client.get("host")), int(client.get("port", PORT)))
+        if not self.server_active:
+            self._log("Server OFF: attiva SERVER ON prima di prendere controllo.")
+            self._refresh_server_toggle()
+            return
+        if self.link.connected and self.link.endpoint == endpoint:
+            self.engine.take(direction)
+            return
+        self.pending_take_direction = direction
+        self.pending_take_entry = None
+        if not self.link.connecting:
+            self.link.connect(endpoint[0], endpoint[1], self._token(), self._identity())
+
     def _route_from_edge(self, direction: str, entry: dict | None = None) -> bool:
         if not self.server_active:
             self.events.put(("log", "Server OFF: routing bordo disattivato."))
@@ -1803,7 +1834,7 @@ class KyMoRemApp:
         candidates = [
             client
             for client in self.config.get("clients", [])
-            if client.get("enabled", True) and self._client_direction(client) == direction
+            if client.get("enabled", True) and direction in self._client_edges(client)
         ]
         if not candidates:
             self.events.put(("log", f"Nessun client assegnato al bordo {direction}."))
@@ -1978,7 +2009,7 @@ class KyMoRemApp:
             pystray.MenuItem(self.text["open_app"], lambda _icon, _item: self.root.after(0, self._show_window)),
             pystray.MenuItem("Server ON/OFF", lambda _icon, _item: self.root.after(0, self._toggle_server)),
             pystray.MenuItem(self.text["connect"], lambda _icon, _item: self.root.after(0, self._connect)),
-            pystray.MenuItem(self.text["take"], lambda _icon, _item: self.root.after(0, self.engine.take)),
+            pystray.MenuItem(self.text["take"], lambda _icon, _item: self.root.after(0, self._take_selected)),
             pystray.MenuItem(self.text["release"], lambda _icon, _item: self.root.after(0, self.engine.release)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self.text["exit"], lambda _icon, _item: self.root.after(0, self._quit)),
@@ -2064,7 +2095,7 @@ class KyMoRemApp:
             self._node_card(
                 box,
                 str(client.get("name", "client")).upper()[:18],
-                f"{client.get('host')}:{client.get('port')} // {client.get('position')}",
+                f"{client.get('host')}:{client.get('port')} // {'/'.join(self._client_edges(client))}",
                 color,
                 active=active,
             )
@@ -2087,7 +2118,7 @@ class KyMoRemApp:
         c.create_text(
             w // 2,
             h - 28,
-            text=f"{self.local_ip}  >>>  {self._client_host()}:{self._client_port()} // {self.text['selected']} {self._client_direction()}",
+            text=f"{self.local_ip}  >>>  {self._client_host()}:{self._client_port()} // {self.text['selected']} {'/'.join(self._client_edges())}",
             fill=CYBER["muted"],
             font=("Consolas", 10),
         )
