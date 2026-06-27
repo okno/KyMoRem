@@ -119,6 +119,10 @@ TH32CS_SNAPPROCESS = 0x00000002
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 WH_KEYBOARD_LL = 13
 WH_MOUSE_LL = 14
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
 WM_QUIT = 0x0012
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
@@ -356,12 +360,40 @@ POSITION_TO_GRID = {
     "right": (1, 0),
     "up": (0, -1),
     "down": (0, 1),
+    "left/up": (-1, -1),
+    "right/up": (1, -1),
+    "left/down": (-1, 1),
+    "right/down": (1, 1),
 }
 GRID_TO_POSITION = {value: key for key, value in POSITION_TO_GRID.items()}
+POSITION_LABELS = {
+    "left": "Left",
+    "right": "Right",
+    "up": "Up",
+    "down": "Down",
+    "left/up": "Left + Up",
+    "right/up": "Right + Up",
+    "left/down": "Left + Down",
+    "right/down": "Right + Down",
+}
+POSITION_VALUES = {value: key for key, value in POSITION_LABELS.items()}
 RETURN_EDGE = {"right": "left", "left": "right", "up": "down", "down": "up"}
 MAX_CLIENTS = 9
 MIN_EDGE_INTERVAL = 0.45
 RELEASE_EDGE_MARGIN = 32
+EDGE_TRIGGER_INSET = 3
+EDGE_CORNER_GUARD = 10
+DISCOVERY_CLIENT_TTL = 18.0
+DISCOVERY_CONFIG_TTL = 45.0
+STARTUP_ALPHA = 0.90
+STARTUP_ASPECT = 16 / 9
+INPUT_FLUSH_INTERVAL = 1 / 60
+MAX_DISCRETE_INPUT_BURST = 96
+MAX_WHEEL_STEPS_PER_FLUSH = 12
+MAX_PENDING_WHEEL_STEPS = 24
+WHEEL_DELTA_UNIT = 120
+PENDING_EDGE_TAKE_TTL = 2.0
+PENDING_MANUAL_TAKE_TTL = 15.0
 SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._ -]+")
 
 
@@ -379,8 +411,19 @@ def async_down(vk: int) -> bool:
     return bool(user32.GetAsyncKeyState(vk) & 0x8000)
 
 
+def screen_rect() -> tuple[int, int, int, int]:
+    left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+    top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+    width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+    height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+    if width <= 0 or height <= 0:
+        return 0, 0, int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
+    return left, top, width, height
+
+
 def screen_size() -> tuple[int, int]:
-    return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    _left, _top, width, height = screen_rect()
+    return width, height
 
 
 def windows_clipboard_files() -> list[Path]:
@@ -488,16 +531,48 @@ def client_key(client: dict) -> str:
     return f"{client.get('host', '')}:{int(client.get('port', PORT))}"
 
 
+def is_test_client(client: dict | None = None, *, name: str = "", host: str = "") -> bool:
+    values = []
+    if client:
+        values.extend([str(client.get("name", "")), str(client.get("host", ""))])
+    values.extend([name, host])
+    joined = " ".join(values).lower()
+    return "smoke" in joined or "test-smoke" in joined
+
+
 def grid_from_position(position: str) -> tuple[int, int]:
-    return POSITION_TO_GRID.get(str(position), (1, 0))
+    raw = str(position)
+    key = POSITION_VALUES.get(raw, raw)
+    return POSITION_TO_GRID.get(key, (1, 0))
 
 
 def position_from_grid(x: int, y: int) -> str:
-    if (x, y) in GRID_TO_POSITION:
-        return GRID_TO_POSITION[(x, y)]
-    if abs(x) >= abs(y):
-        return "right" if x >= 0 else "left"
-    return "down" if y >= 0 else "up"
+    sx = -1 if x < 0 else 1 if x > 0 else 0
+    sy = -1 if y < 0 else 1 if y > 0 else 0
+    if (sx, sy) in GRID_TO_POSITION:
+        return GRID_TO_POSITION[(sx, sy)]
+    if sx:
+        return "right" if sx > 0 else "left"
+    if not sy:
+        return "right"
+    return "down" if sy > 0 else "up"
+
+
+def position_label_from_grid(x: int, y: int) -> str:
+    return POSITION_LABELS.get(position_from_grid(x, y), POSITION_LABELS["right"])
+
+
+def client_edges_from_grid(x: int, y: int) -> list[str]:
+    edges: list[str] = []
+    if x < 0:
+        edges.append("left")
+    elif x > 0:
+        edges.append("right")
+    if y < 0:
+        edges.append("up")
+    elif y > 0:
+        edges.append("down")
+    return edges or ["right"]
 
 
 def normalize_client(raw: dict, index: int = 0) -> dict:
@@ -544,7 +619,7 @@ def load_config() -> dict:
         if key not in config:
             config[key] = value
             changed = True
-    for key in ["security", "clipboard", "discovery", "email_relay"]:
+    for key in ["security", "clipboard", "discovery", "email_relay", "ui"]:
         merged = dict(DEFAULT_CONFIG[key])
         merged.update(config.get(key, {}))
         if merged != config.get(key):
@@ -577,6 +652,14 @@ def load_config() -> dict:
     if config.get("theme") not in THEMES:
         config["theme"] = "old_school_x11"
         changed = True
+    try:
+        opacity = float(config.get("ui", {}).get("opacity", STARTUP_ALPHA))
+    except (TypeError, ValueError):
+        opacity = STARTUP_ALPHA
+    opacity = max(0.35, min(1.0, opacity))
+    if opacity != config.get("ui", {}).get("opacity"):
+        config.setdefault("ui", {})["opacity"] = opacity
+        changed = True
     if changed:
         path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     return config
@@ -601,6 +684,7 @@ class RemoteLink:
         self.connecting = False
         self.client_info: dict = {}
         self.endpoint: tuple[str, int] | None = None
+        self.connect_generation = 0
 
     def connect(self, host: str, port: int, token: str, identity: dict) -> None:
         self.disconnect()
@@ -608,16 +692,25 @@ class RemoteLink:
             if self.connected or self.connecting:
                 return
             self.connecting = True
-        thread = threading.Thread(target=self._connect_thread, args=(host, port, token, identity), daemon=True)
+            self.connect_generation += 1
+            generation = self.connect_generation
+        thread = threading.Thread(target=self._connect_thread, args=(generation, host, port, token, identity), daemon=True)
         thread.start()
 
-    def _connect_thread(self, host: str, port: int, token: str, identity: dict) -> None:
+    def _connect_thread(self, generation: int, host: str, port: int, token: str, identity: dict) -> None:
         try:
             self.events.put(("log", f"Connessione a {host}:{port}..."))
             sock = socket.create_connection((host, port), timeout=5)
             sock.settimeout(None)
             secure = secure_connect(sock, token, identity)
             with self.lock:
+                if generation != self.connect_generation or not self.connecting:
+                    try:
+                        secure.send(frame("release"))
+                    except Exception:
+                        pass
+                    sock.close()
+                    return
                 self.sock = sock
                 self.secure = secure
                 self.connected = True
@@ -634,15 +727,20 @@ class RemoteLink:
             self.events.put(("log", f"Connessione fallita: {exc}"))
         finally:
             with self.lock:
-                was_connected = self.connected
-                self.connecting = False
-                self.connected = False
-                self.sock = None
-                self.secure = None
-                self.endpoint = None
-            if was_connected:
-                self.events.put(("relay", ("client_disconnected", f"KyMoRem client disconnected: {host}:{port}", "The secure transport has closed.")))
-            self.events.put(("disconnected", None))
+                current_generation = generation == self.connect_generation
+                if not current_generation:
+                    was_connected = False
+                else:
+                    was_connected = self.connected
+                    self.connecting = False
+                    self.connected = False
+                    self.sock = None
+                    self.secure = None
+                    self.endpoint = None
+            if current_generation:
+                if was_connected:
+                    self.events.put(("relay", ("client_disconnected", f"KyMoRem client disconnected: {host}:{port}", "The secure transport has closed.")))
+                self.events.put(("disconnected", None))
 
     def disconnect(self) -> None:
         with self.lock:
@@ -653,6 +751,7 @@ class RemoteLink:
             self.connected = False
             self.connecting = False
             self.endpoint = None
+            self.connect_generation += 1
         if sock:
             try:
                 if secure:
@@ -709,21 +808,22 @@ class ThemedSelect(ttk.Combobox):
 
 
 class ControlEngine:
-    def __init__(self, link: RemoteLink, events: queue.Queue, router=None, enabled: bool = False):
+    def __init__(self, link: RemoteLink, events: queue.Queue, router=None, edge_guard=None, enabled: bool = False):
         self.link = link
         self.events = events
         self.router = router
+        self.edge_guard = edge_guard
         self.enabled = enabled
         self.remote = False
         self.running = True
-        self.w, self.h = screen_size()
-        self.anchor = (self.w // 2, self.h // 2)
+        self.left, self.top, self.w, self.h = screen_rect()
+        self.anchor = (self.left + self.w // 2, self.top + self.h // 2)
         self.active_direction = "right"
         self.last_edge_ts = 0.0
         self.edge_exit = {
             "direction": "right",
-            "x": self.w - 1,
-            "y": self.h // 2,
+            "x": self.left + self.w - 1,
+            "y": self.top + self.h // 2,
             "x_ratio": 1.0,
             "y_ratio": 0.5,
             "ts": 0.0,
@@ -740,7 +840,13 @@ class ControlEngine:
         self.mouse_proc = HOOKPROC(self._mouse_hook)
         self.button_state = {name: False for name in BUTTON_KEYS}
         self.key_state = {name: False for name in KEY_SCAN}
-        self.input_queue: queue.Queue = queue.Queue(maxsize=4096)
+        self.input_queue: queue.Queue = queue.Queue(maxsize=1024)
+        self.coalesce_lock = threading.Lock()
+        self.pending_move_dx = 0
+        self.pending_move_dy = 0
+        self.pending_wheel_dx = 0
+        self.pending_wheel_dy = 0
+        self.last_input_drop_log = 0.0
         self.input_thread = threading.Thread(target=self._input_sender_loop, daemon=True)
         self.input_thread.start()
         self.hook_thread = threading.Thread(target=self._hook_loop, daemon=True)
@@ -749,19 +855,87 @@ class ControlEngine:
         self.thread.start()
 
     def _queue_remote(self, kind: str, **payload) -> None:
+        if kind == "move":
+            with self.coalesce_lock:
+                self.pending_move_dx += int(payload.get("dx", 0))
+                self.pending_move_dy += int(payload.get("dy", 0))
+            return
+        if kind == "wheel":
+            with self.coalesce_lock:
+                self.pending_wheel_dx = self._cap_pending_wheel(
+                    self.pending_wheel_dx + int(payload.get("dx", 0))
+                )
+                self.pending_wheel_dy = self._cap_pending_wheel(
+                    self.pending_wheel_dy + int(payload.get("dy", 0))
+                )
+            return
         try:
             self.input_queue.put_nowait((kind, payload))
         except queue.Full:
-            self.events.put(("log", "Input remoto scartato: coda piena."))
+            now = time.monotonic()
+            if now - self.last_input_drop_log > 1.0:
+                self.last_input_drop_log = now
+                self.events.put(("log", "Input remoto discreto scartato: coda piena."))
+
+    def _cap_pending_wheel(self, value: int) -> int:
+        limit = MAX_PENDING_WHEEL_STEPS * WHEEL_DELTA_UNIT
+        return max(-limit, min(limit, int(value)))
+
+    def _take_wheel_batch(self, attr: str) -> int:
+        pending = int(getattr(self, attr))
+        steps = int(pending / WHEEL_DELTA_UNIT)
+        if steps == 0:
+            return 0
+        steps = max(-MAX_WHEEL_STEPS_PER_FLUSH, min(MAX_WHEEL_STEPS_PER_FLUSH, steps))
+        delta = steps * WHEEL_DELTA_UNIT
+        setattr(self, attr, pending - delta)
+        return delta
+
+    def _take_coalesced_inputs(self) -> tuple[int, int, int, int]:
+        with self.coalesce_lock:
+            dx = self.pending_move_dx
+            dy = self.pending_move_dy
+            self.pending_move_dx = 0
+            self.pending_move_dy = 0
+            wheel_dx = self._take_wheel_batch("pending_wheel_dx")
+            wheel_dy = self._take_wheel_batch("pending_wheel_dy")
+        return dx, dy, wheel_dx, wheel_dy
+
+    def _flush_coalesced_inputs(self) -> None:
+        if not self.remote:
+            self._take_coalesced_inputs()
+            return
+        dx, dy, wheel_dx, wheel_dy = self._take_coalesced_inputs()
+        if dx or dy:
+            self.link.send("move", dx=dx, dy=dy)
+        if wheel_dx or wheel_dy:
+            self.link.send("wheel", dx=wheel_dx, dy=wheel_dy)
 
     def _input_sender_loop(self) -> None:
+        next_flush = time.monotonic()
         while self.running:
-            try:
-                kind, payload = self.input_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            if self.remote:
-                self.link.send(kind, **payload)
+            now = time.monotonic()
+            if now >= next_flush:
+                try:
+                    self._flush_coalesced_inputs()
+                except Exception as exc:
+                    self.events.put(("log", f"Invio input remoto fallito: {exc}"))
+                next_flush = now + INPUT_FLUSH_INTERVAL
+
+            sent = 0
+            while sent < MAX_DISCRETE_INPUT_BURST:
+                try:
+                    kind, payload = self.input_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if self.remote:
+                    try:
+                        self.link.send(kind, **payload)
+                    except Exception as exc:
+                        self.events.put(("log", f"Invio input remoto fallito: {exc}"))
+                        break
+                sent += 1
+            time.sleep(0.004)
 
     def _send_remote_key_state(self, vk: int, down: bool) -> None:
         key = VK_TO_KEY.get(vk)
@@ -833,7 +1007,9 @@ class ControlEngine:
             if msg in {WM_MOUSEWHEEL, WM_MOUSEHWHEEL}:
                 info = ctypes.cast(l_param, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 delta = ctypes.c_short((int(info.mouseData) >> 16) & 0xFFFF).value
-                if delta:
+                if delta and msg == WM_MOUSEHWHEEL:
+                    self._queue_remote("wheel", dx=delta)
+                elif delta:
                     self._queue_remote("wheel", dy=delta)
                 return 1
         return user32.CallNextHookEx(self.mouse_hook, n_code, w_param, l_param)
@@ -877,13 +1053,14 @@ class ControlEngine:
             user32.PostThreadMessageW(self.hook_thread_id, WM_QUIT, 0, 0)
 
     def _capture_edge_exit(self, direction: str, x: int, y: int) -> dict:
-        self.w, self.h = screen_size()
+        self.left, self.top, self.w, self.h = screen_rect()
+        self.anchor = (self.left + self.w // 2, self.top + self.h // 2)
         entry = {
             "direction": direction,
             "x": int(x),
             "y": int(y),
-            "x_ratio": max(0.0, min(1.0, x / max(1, self.w - 1))),
-            "y_ratio": max(0.0, min(1.0, y / max(1, self.h - 1))),
+            "x_ratio": max(0.0, min(1.0, (int(x) - self.left) / max(1, self.w - 1))),
+            "y_ratio": max(0.0, min(1.0, (int(y) - self.top) / max(1, self.h - 1))),
             "ts": time.monotonic(),
         }
         self.edge_exit = entry
@@ -930,16 +1107,17 @@ class ControlEngine:
     def release(self) -> None:
         if self.remote:
             self.remote = False
+            self._take_coalesced_inputs()
             self._release_remote_inputs()
             self.last_edge_ts = time.monotonic()
             if self.active_direction == "left":
-                set_cursor(RELEASE_EDGE_MARGIN, self.h // 2)
+                set_cursor(self.left + RELEASE_EDGE_MARGIN, self.top + self.h // 2)
             elif self.active_direction == "up":
-                set_cursor(self.w // 2, RELEASE_EDGE_MARGIN)
+                set_cursor(self.left + self.w // 2, self.top + RELEASE_EDGE_MARGIN)
             elif self.active_direction == "down":
-                set_cursor(self.w // 2, max(0, self.h - RELEASE_EDGE_MARGIN))
+                set_cursor(self.left + self.w // 2, self.top + max(0, self.h - RELEASE_EDGE_MARGIN))
             else:
-                set_cursor(max(0, self.w - RELEASE_EDGE_MARGIN), self.h // 2)
+                set_cursor(self.left + max(0, self.w - RELEASE_EDGE_MARGIN), self.top + self.h // 2)
             self.link.send("release")
             self.events.put(("remote", False))
             self.events.put(("log", "Controllo remoto rilasciato."))
@@ -949,13 +1127,19 @@ class ControlEngine:
             self.release()
 
     def _host_edge(self, x: int, y: int) -> str | None:
-        if x >= self.w - 2:
+        right_at = self.left + max(0, self.w - EDGE_TRIGGER_INSET)
+        down_at = self.top + max(0, self.h - EDGE_TRIGGER_INSET)
+        in_top_corner = y <= self.top + EDGE_CORNER_GUARD
+        in_bottom_corner = y >= self.top + max(0, self.h - 1 - EDGE_CORNER_GUARD)
+        in_left_corner = x <= self.left + EDGE_CORNER_GUARD
+        in_right_corner = x >= self.left + max(0, self.w - 1 - EDGE_CORNER_GUARD)
+        if x >= right_at and not (in_top_corner or in_bottom_corner):
             return "right"
-        if x <= 1:
+        if x <= self.left + EDGE_TRIGGER_INSET - 1 and not (in_top_corner or in_bottom_corner):
             return "left"
-        if y <= 1:
+        if y <= self.top + EDGE_TRIGGER_INSET - 1 and not (in_left_corner or in_right_corner):
             return "up"
-        if y >= self.h - 2:
+        if y >= down_at and not (in_left_corner or in_right_corner):
             return "down"
         return None
 
@@ -966,6 +1150,8 @@ class ControlEngine:
                 continue
             if not self.remote:
                 x, y = get_cursor()
+                if self.edge_guard and self.edge_guard(x, y):
+                    continue
                 direction = self._host_edge(x, y)
                 if direction and time.monotonic() - self.last_edge_ts > MIN_EDGE_INTERVAL:
                     self.last_edge_ts = time.monotonic()
@@ -983,7 +1169,7 @@ class ControlEngine:
             dx = x - self.anchor[0]
             dy = y - self.anchor[1]
             if dx or dy:
-                self.link.send("move", dx=dx, dy=dy)
+                self._queue_remote("move", dx=dx, dy=dy)
                 set_cursor(*self.anchor)
 
 
@@ -998,26 +1184,37 @@ class KyMoRemApp:
         self.discovered_clients: dict[str, dict] = {}
         self.client_boxes: dict[str, tuple[int, int, int, int]] = {}
         self.selected_client = ""
+        self._prune_transient_clients(startup=True)
         self.selected_client = client_key(self._client_config())
         self.drag_client: str | None = None
         self.file_transfers: dict[str, dict] = {}
         self.pointer_hint: dict | None = None
         self.pointer_hint_until = 0.0
+        self.next_prune_ts = 0.0
         self.events: queue.Queue = queue.Queue()
         self.link = RemoteLink(self.events)
         self.server_active = bool(self.config.get("mode") == "server" and self.config.get("server_on", False))
         self.auto_retry_started = False
         self.pending_take_direction: str | None = None
         self.pending_take_entry: dict | None = None
-        self.engine = ControlEngine(self.link, self.events, self._route_from_edge, enabled=self.server_active)
+        self.pending_take_client: str = ""
+        self.pending_take_endpoint: tuple[str, int] | None = None
+        self.pending_take_deadline = 0.0
+        self.pending_take_requires_edge = False
+        self.engine = ControlEngine(self.link, self.events, self._route_from_edge, self._pointer_inside_ui, enabled=self.server_active)
         self.discovery_beacon = None
         self.discovery_listener = None
         self.tray_icon = None
         self.root = tk.Tk()
         self.root.title(f"{APP_NAME} {VERSION} // {APP_SHORT_MARK} Neon Route Console")
-        self.root.geometry("1024x768")
-        self.root.minsize(760, 500)
+        self.root.geometry(self._startup_geometry())
+        self.root.minsize(720, 405)
         self.root.configure(bg=CYBER["bg"])
+        try:
+            self.root.attributes("-alpha", self._ui_opacity())
+            self.root.attributes("-topmost", False)
+        except tk.TclError:
+            pass
         icon = asset_path("kymorem.ico")
         if icon.exists():
             try:
@@ -1034,6 +1231,54 @@ class KyMoRemApp:
             self._auto_connect()
         else:
             self._log("Modalita client predefinita: server OFF. Usa SERVER ON dalla UI per condividere mouse e tastiera.")
+
+    def _startup_geometry(self) -> str:
+        screen_w = max(1024, int(self.root.winfo_screenwidth()))
+        screen_h = max(576, int(self.root.winfo_screenheight()))
+        target_w = max(720, screen_w // 2)
+        target_h = round(target_w / STARTUP_ASPECT)
+        half_h = max(405, screen_h // 2)
+        if target_h > half_h:
+            target_h = half_h
+            target_w = round(target_h * STARTUP_ASPECT)
+        target_w = min(target_w, max(720, screen_w - 80))
+        target_h = min(target_h, max(405, screen_h - 80))
+        x = max(0, screen_w - target_w - 36)
+        y = max(0, screen_h - target_h - 72)
+        return f"{target_w}x{target_h}+{x}+{y}"
+
+    def _ui_config(self) -> dict:
+        ui = dict(DEFAULT_CONFIG.get("ui", {}))
+        ui.update(self.config.get("ui", {}))
+        return ui
+
+    def _ui_opacity(self) -> float:
+        try:
+            value = float(self._ui_config().get("opacity", STARTUP_ALPHA))
+        except (TypeError, ValueError):
+            value = STARTUP_ALPHA
+        return max(0.35, min(1.0, value))
+
+    def _apply_ui_opacity(self, value: float) -> None:
+        value = max(0.35, min(1.0, float(value)))
+        try:
+            self.root.attributes("-alpha", value)
+        except tk.TclError:
+            pass
+        if hasattr(self, "opacity_value"):
+            self.opacity_value.configure(text=f"{round(value * 100)}%")
+
+    def _opacity_changed(self, value) -> None:
+        self._apply_ui_opacity(float(value) / 100.0)
+
+    def _save_ui_opacity(self, _event=None) -> None:
+        if not hasattr(self, "opacity_var"):
+            return
+        value = max(35, min(100, int(round(float(self.opacity_var.get())))))
+        self.config.setdefault("ui", {})["opacity"] = value / 100.0
+        self._apply_ui_opacity(value / 100.0)
+        self._save_config()
+        self._log(self.text["opacity_saved"].format(value=value))
 
     def _style(self) -> None:
         style = ttk.Style()
@@ -1090,7 +1335,7 @@ class KyMoRemApp:
         ).pack(anchor="w", pady=(0, 2))
         tk.Label(
             title_box,
-            text=f"{APP_EXTENDED_NAME} // {APP_SHORT_MARK} // RIGHT EDGE ROUTER // LAN NODE 54865",
+            text=f"{APP_EXTENDED_NAME} // {APP_SHORT_MARK} // EDGE ROUTER // LAN NODE 54865",
             fg=CYBER["pink"],
             bg=CYBER["bg"],
             font=("Consolas", 11, "bold"),
@@ -1260,7 +1505,7 @@ class KyMoRemApp:
         tk.Label(right, text=self.text["client_map"].upper(), fg=CYBER["cyan"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(0, 6))
         self.client_list = tk.Listbox(
             right,
-            height=7,
+            height=5,
             bg=CYBER["panel2"],
             fg=CYBER["text"],
             selectbackground=CYBER["cyan_dim"],
@@ -1278,14 +1523,14 @@ class KyMoRemApp:
         self.client_name_var = tk.StringVar()
         self.client_host_var = tk.StringVar()
         self.client_port_var = tk.StringVar(value=str(PORT))
-        self.client_position_var = tk.StringVar(value="right")
+        self.client_position_var = tk.StringVar(value=POSITION_LABELS["right"])
         self._field(form, self.text["name"], self.client_name_var, 0)
         self._field(form, self.text["ip"], self.client_host_var, 1)
         self._field(form, self.text["port"], self.client_port_var, 2)
         tk.Label(form, text=self.text["position"].upper(), fg=CYBER["muted"], bg=CYBER["panel"], font=("Consolas", 8, "bold")).grid(row=3, column=0, sticky="w", pady=2)
         self.position_box = ThemedSelect(
             form,
-            values=["right", "left", "up", "down"],
+            values=list(POSITION_LABELS.values()),
             width=16,
             textvariable=self.client_position_var,
         )
@@ -1298,6 +1543,7 @@ class KyMoRemApp:
         self._mini_button(client_buttons, self.text["save"].upper(), self._save_selected_client, CYBER["cyan"]).grid(row=0, column=1, padx=2, pady=2, sticky="ew")
         self._mini_button(client_buttons, self.text["delete"].upper(), self._delete_selected_client, CYBER["red"]).grid(row=0, column=2, padx=2, pady=2, sticky="ew")
         self._mini_button(client_buttons, self.text["use"].upper(), self._connect, CYBER["yellow"]).grid(row=0, column=3, padx=2, pady=2, sticky="ew")
+        self._mini_button(client_buttons, self.text.get("clean", "Pulisci").upper(), self._clean_discovery_clients, CYBER["muted"]).grid(row=1, column=0, columnspan=4, padx=2, pady=(4, 2), sticky="ew")
         for col in range(4):
             client_buttons.columnconfigure(col, weight=1)
 
@@ -1326,11 +1572,54 @@ class KyMoRemApp:
         for col in range(3):
             clip_buttons.columnconfigure(col, weight=1)
 
+        tk.Label(right, text=self.text["advanced"].upper(), fg=CYBER["pink"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(6, 6))
+        advanced = tk.Frame(right, bg=CYBER["panel"])
+        advanced.pack(fill="x", padx=16, pady=(0, 10))
+        tk.Label(
+            advanced,
+            text=self.text["transparency"].upper(),
+            fg=CYBER["muted"],
+            bg=CYBER["panel"],
+            font=("Consolas", 8, "bold"),
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.opacity_var = tk.DoubleVar(value=round(self._ui_opacity() * 100))
+        self.opacity_value = tk.Label(
+            advanced,
+            text=f"{int(self.opacity_var.get())}%",
+            fg=CYBER["cyan"],
+            bg=CYBER["panel"],
+            font=("Consolas", 8, "bold"),
+            width=5,
+            anchor="e",
+        )
+        self.opacity_value.grid(row=0, column=2, sticky="e")
+        opacity_scale = tk.Scale(
+            advanced,
+            from_=35,
+            to=100,
+            orient="horizontal",
+            variable=self.opacity_var,
+            command=self._opacity_changed,
+            bg=CYBER["panel"],
+            fg=CYBER["text"],
+            troughcolor=CYBER["panel2"],
+            activebackground=CYBER["cyan"],
+            highlightthickness=0,
+            bd=0,
+            showvalue=False,
+            resolution=1,
+            length=180,
+        )
+        opacity_scale.grid(row=0, column=1, sticky="ew")
+        opacity_scale.bind("<ButtonRelease-1>", self._save_ui_opacity)
+        opacity_scale.bind("<KeyRelease>", self._save_ui_opacity)
+        advanced.columnconfigure(1, weight=1)
+
         tk.Label(right, text=self.text["event_stream"].upper(), fg=CYBER["yellow"], bg=CYBER["panel"], font=("Consolas", 12, "bold")).pack(anchor="w", padx=18, pady=(6, 8))
         self.log = tk.Text(
             right,
             width=38,
-            height=18,
+            height=8,
             bg=CYBER["panel2"],
             fg=CYBER["text"],
             insertbackground=CYBER["cyan"],
@@ -1368,6 +1657,56 @@ class KyMoRemApp:
         self.config["clients"] = [normalize_client(item, index) for index, item in enumerate(self.config.get("clients", []))]
         (app_dir() / "config.json").write_text(json.dumps(self.config, indent=2), encoding="utf-8")
 
+    def _discovered_alive(self, key: str) -> bool:
+        seen = float(self.discovered_clients.get(key, {}).get("seen", 0.0) or 0.0)
+        return bool(seen and time.time() - seen <= DISCOVERY_CLIENT_TTL)
+
+    def _active_discovery_count(self) -> int:
+        now = time.time()
+        return sum(1 for item in self.discovered_clients.values() if now - float(item.get("seen", 0.0) or 0.0) <= DISCOVERY_CLIENT_TTL)
+
+    def _update_discovery_badge(self) -> None:
+        if not hasattr(self, "discovery_badge"):
+            return
+        if not self.server_active:
+            self.discovery_badge.configure(text=self.text["discovery_off"].upper())
+            return
+        self.discovery_badge.configure(text=f"DISCOVERY // {self._active_discovery_count()} CLIENT ONLINE")
+
+    def _prune_transient_clients(self, startup: bool = False) -> bool:
+        now = time.time()
+        clients = []
+        changed = False
+        for client in self.config.get("clients", []):
+            source = str(client.get("source", "manual")).lower()
+            endpoint = (str(client.get("host", "")), int(client.get("port", PORT)))
+            last_seen = float(client.get("last_seen", 0.0) or 0.0)
+            remove = is_test_client(client)
+            if source == "discovery":
+                stale_saved = not last_seen or now - last_seen > DISCOVERY_CONFIG_TTL
+                alive = self._discovered_alive(client_key(client))
+                active_endpoint = getattr(getattr(self, "link", None), "endpoint", None)
+                remove = remove or startup or (stale_saved and not alive and active_endpoint != endpoint)
+            if remove:
+                changed = True
+                continue
+            clients.append(client)
+
+        if not changed:
+            return False
+
+        self.config["clients"] = clients
+        if self.selected_client and not self._client_by_key(self.selected_client):
+            self.selected_client = client_key(clients[0]) if clients else ""
+        if hasattr(self, "client_list"):
+            self._save_config()
+            self._refresh_client_list()
+            self._draw_layout()
+        else:
+            self.config["clients"] = [normalize_client(item, index) for index, item in enumerate(self.config.get("clients", []))]
+            (app_dir() / "config.json").write_text(json.dumps(self.config, indent=2), encoding="utf-8")
+        return True
+
     def _client_host(self) -> str:
         return str(self._client_config().get("host", "127.0.0.1"))
 
@@ -1383,18 +1722,12 @@ class KyMoRemApp:
 
     def _client_edges(self, client: dict | None = None) -> list[str]:
         item = client or self._client_config()
-        x = int(item.get("x", 1))
-        y = int(item.get("y", 0))
-        edges: list[str] = []
-        if x < 0:
-            edges.append("left")
-        elif x > 0:
-            edges.append("right")
-        if y < 0:
-            edges.append("up")
-        elif y > 0:
-            edges.append("down")
-        return edges or [self._client_direction(item)]
+        try:
+            x = int(item.get("x", 1))
+            y = int(item.get("y", 0))
+        except (TypeError, ValueError):
+            x, y = 1, 0
+        return client_edges_from_grid(x, y)
 
     def _direction_label(self, direction: str) -> str:
         return self.text.get(direction, direction).upper()
@@ -1402,7 +1735,7 @@ class KyMoRemApp:
     def _client_badge_text(self, client: dict | None = None) -> str:
         item = client or self._client_config()
         direction = "/".join(self._direction_label(edge) for edge in self._client_edges(item))
-        return f"{direction} NODE // {item.get('host')}"
+        return f"{direction} // {item.get('name')} // {item.get('host')}:{item.get('port')}"
 
     def _token(self) -> str:
         return str(self.config.get("token") or DEFAULT_CONFIG["token"])
@@ -1483,6 +1816,18 @@ class KyMoRemApp:
             return ""
         return addr
 
+    def _pointer_inside_ui(self, x: int, y: int) -> bool:
+        try:
+            if not self.root.winfo_viewable():
+                return False
+            rx = int(self.root.winfo_rootx())
+            ry = int(self.root.winfo_rooty())
+            rw = int(self.root.winfo_width())
+            rh = int(self.root.winfo_height())
+        except tk.TclError:
+            return False
+        return rx <= int(x) < rx + rw and ry <= int(y) < ry + rh
+
     def _start_discovery(self) -> None:
         if not self.server_active:
             self.discovery_badge.configure(text=self.text["discovery_off"].upper())
@@ -1536,17 +1881,21 @@ class KyMoRemApp:
             host = addr[0]
         port = int(payload.get("port", PORT))
         name = str(payload.get("name") or host)
-        self.discovered_clients[name] = {"host": host, "port": port, "name": name, "seen": time.time()}
-        self.discovery_badge.configure(text=f"DISCOVERY // {len(self.discovered_clients)} CLIENT")
-        clients = self.config.setdefault("clients", [])
+        if is_test_client(name=name, host=host):
+            return
+        now = time.time()
         key = f"{host}:{port}"
+        self.discovered_clients[key] = {"host": host, "port": port, "name": name, "seen": now}
+        self._update_discovery_badge()
+        clients = self.config.setdefault("clients", [])
         existing = next((client for client in clients if client_key(client) == key), None)
         if existing:
             existing["name"] = name
+            existing["last_seen"] = now
             existing["source"] = existing.get("source", "discovery")
         elif len(clients) < MAX_CLIENTS:
             gx, gy = next_free_position(clients)
-            clients.append(normalize_client({"name": name, "host": host, "port": port, "x": gx, "y": gy, "source": "discovery"}))
+            clients.append(normalize_client({"name": name, "host": host, "port": port, "x": gx, "y": gy, "source": "discovery", "last_seen": now}))
             self._log(f"Client scoperto: {name} {host}:{port}")
         self._save_config()
         self._refresh_client_list()
@@ -1619,10 +1968,18 @@ class KyMoRemApp:
         for index, client in enumerate(self.config.get("clients", [])):
             key = client_key(client)
             marker = "*" if key == self.selected_client else " "
-            source = str(client.get("source", "manual"))[:3].upper()
+            endpoint = (str(client.get("host")), int(client.get("port", PORT)))
+            if self.link.connected and self.link.endpoint == endpoint:
+                state = self.text["online"]
+            elif self._discovered_alive(key):
+                state = "Discovery"
+            elif str(client.get("source", "manual")).lower() == "manual":
+                state = "Manuale" if self.lang == "it" else "Manual"
+            else:
+                state = self.text["standby"]
             self.client_list.insert(
                 "end",
-                f"{marker} {client.get('name')} {client.get('host')}:{client.get('port')} [{client.get('x')},{client.get('y')}] {source}",
+                f"{marker} {client.get('name')}  {client.get('host')}:{client.get('port')}  [{client.get('x')},{client.get('y')}]  {state}",
             )
             if key == self.selected_client:
                 selected_index = index
@@ -1632,11 +1989,32 @@ class KyMoRemApp:
             self.client_list.activate(selected_index)
             self._load_client_form(self._client_config())
 
+    def _clean_discovery_clients(self) -> None:
+        before = len(self.config.get("clients", []))
+        self.discovered_clients = {
+            key: value
+            for key, value in self.discovered_clients.items()
+            if time.time() - float(value.get("seen", 0.0) or 0.0) <= DISCOVERY_CLIENT_TTL
+        }
+        self.config["clients"] = [
+            client
+            for client in self.config.get("clients", [])
+            if str(client.get("source", "manual")).lower() == "manual" and not is_test_client(client)
+        ]
+        if not self.config["clients"]:
+            self.config["clients"] = [normalize_client(DEFAULT_CONFIG["clients"][0])]
+        self.selected_client = client_key(self.config["clients"][0])
+        self._save_config()
+        self._refresh_client_list()
+        self._update_discovery_badge()
+        self._draw_layout()
+        self._log(f"Pulizia discovery/offline: rimossi {max(0, before - len(self.config['clients']))} client.")
+
     def _load_client_form(self, client: dict) -> None:
         self.client_name_var.set(str(client.get("name", "")))
         self.client_host_var.set(str(client.get("host", "")))
         self.client_port_var.set(str(client.get("port", PORT)))
-        self.client_position_var.set(self._client_direction(client))
+        self.client_position_var.set(position_label_from_grid(int(client.get("x", 1)), int(client.get("y", 0))))
 
     def _select_client_from_list(self, _event=None) -> None:
         selection = self.client_list.curselection()
@@ -1652,7 +2030,7 @@ class KyMoRemApp:
         self._refresh_client_list()
         self._draw_layout()
 
-    def _manual_form_client(self) -> dict | None:
+    def _manual_form_client(self, base: dict | None = None) -> dict | None:
         name = self.client_name_var.get().strip() or f"client-{len(self.config.get('clients', [])) + 1}"
         host = self.client_host_var.get().strip()
         if not host:
@@ -1663,7 +2041,12 @@ class KyMoRemApp:
         except ValueError:
             messagebox.showwarning(APP_NAME, "Porta non valida.")
             return None
-        gx, gy = grid_from_position(self.client_position_var.get())
+        label = self.client_position_var.get()
+        if base and label == position_label_from_grid(int(base.get("x", 1)), int(base.get("y", 0))):
+            gx = int(base.get("x", 1))
+            gy = int(base.get("y", 0))
+        else:
+            gx, gy = grid_from_position(label)
         return normalize_client({"name": name, "host": host, "port": port, "x": gx, "y": gy, "source": "manual", "enabled": True})
 
     def _add_manual_client(self) -> None:
@@ -1684,7 +2067,7 @@ class KyMoRemApp:
 
     def _save_selected_client(self) -> None:
         selected = self._client_config()
-        form = self._manual_form_client()
+        form = self._manual_form_client(selected)
         if not form:
             return
         selected.update(form)
@@ -1811,6 +2194,49 @@ class KyMoRemApp:
             except Exception as exc:
                 self.events.put(("log", f"Invio file fallito {path.name}: {exc}"))
 
+    def _set_pending_take(self, client: dict, direction: str, entry: dict | None, *, requires_edge: bool) -> None:
+        self.pending_take_direction = direction
+        self.pending_take_entry = dict(entry) if entry else None
+        self.pending_take_client = client_key(client)
+        self.pending_take_endpoint = (str(client.get("host", "")), int(client.get("port", PORT)))
+        ttl = PENDING_EDGE_TAKE_TTL if requires_edge else PENDING_MANUAL_TAKE_TTL
+        self.pending_take_deadline = time.monotonic() + ttl
+        self.pending_take_requires_edge = requires_edge
+
+    def _clear_pending_take(self) -> None:
+        self.pending_take_direction = None
+        self.pending_take_entry = None
+        self.pending_take_client = ""
+        self.pending_take_endpoint = None
+        self.pending_take_deadline = 0.0
+        self.pending_take_requires_edge = False
+
+    def _consume_pending_take(self) -> tuple[str, dict | None] | None:
+        direction = self.pending_take_direction
+        entry = self.pending_take_entry
+        pending_client = self.pending_take_client
+        pending_endpoint = self.pending_take_endpoint
+        requires_edge = self.pending_take_requires_edge
+        deadline = self.pending_take_deadline
+        self._clear_pending_take()
+        if not direction or not self.server_active:
+            return None
+        if deadline and time.monotonic() > deadline:
+            self._log("Take remoto annullato: richiesta bordo scaduta.")
+            return None
+        if pending_client and pending_client != self.selected_client:
+            self._log("Take remoto annullato: client selezionato cambiato.")
+            return None
+        if pending_endpoint and self.link.endpoint != pending_endpoint:
+            self._log("Take remoto annullato: endpoint connesso diverso dal client atteso.")
+            return None
+        if requires_edge:
+            x, y = get_cursor()
+            if self._pointer_inside_ui(x, y) or self.engine._host_edge(x, y) != direction:
+                self._log("Take remoto annullato: il puntatore non e' piu' sul bordo.")
+                return None
+        return direction, entry
+
     def _take_selected(self) -> None:
         client = self._client_config()
         direction = self._client_edges(client)[0]
@@ -1822,10 +2248,20 @@ class KyMoRemApp:
         if self.link.connected and self.link.endpoint == endpoint:
             self.engine.take(direction)
             return
-        self.pending_take_direction = direction
-        self.pending_take_entry = None
+        self._set_pending_take(client, direction, None, requires_edge=False)
         if not self.link.connecting:
             self.link.connect(endpoint[0], endpoint[1], self._token(), self._identity())
+
+    def _fallback_route_client(self, direction: str) -> dict | None:
+        enabled = [client for client in self.config.get("clients", []) if client.get("enabled", True)]
+        if len(enabled) != 1:
+            return None
+        target = enabled[0]
+        if direction not in self._client_edges(target):
+            self.events.put(
+                ("log", f"Nessun client assegnato al bordo {direction}: fallback su {target.get('name')}.")
+            )
+        return target
 
     def _route_from_edge(self, direction: str, entry: dict | None = None) -> bool:
         if not self.server_active:
@@ -1836,17 +2272,20 @@ class KyMoRemApp:
             for client in self.config.get("clients", [])
             if client.get("enabled", True) and direction in self._client_edges(client)
         ]
-        if not candidates:
+        target = (
+            sorted(candidates, key=lambda item: abs(int(item.get("x", 0))) + abs(int(item.get("y", 0))))[0]
+            if candidates
+            else self._fallback_route_client(direction)
+        )
+        if not target:
             self.events.put(("log", f"Nessun client assegnato al bordo {direction}."))
             return False
-        target = sorted(candidates, key=lambda item: abs(int(item.get("x", 0))) + abs(int(item.get("y", 0))))[0]
         self.selected_client = client_key(target)
         self.events.put(("select", self.selected_client))
         endpoint = (str(target.get("host")), int(target.get("port", PORT)))
         if self.link.connected and self.link.endpoint == endpoint:
             return True
-        self.pending_take_direction = direction
-        self.pending_take_entry = entry
+        self._set_pending_take(target, direction, entry, requires_edge=True)
         if not self.link.connecting:
             self.link.connect(endpoint[0], endpoint[1], self._token(), self._identity())
         return False
@@ -1887,20 +2326,20 @@ class KyMoRemApp:
             return
         if self.server_active:
             self.server_toggle.configure(
-                text=self.text["server_off"].upper(),
-                fg=CYBER["red"],
+                text="SERVER: ON",
+                fg=CYBER["acid"],
                 activebackground=CYBER["red"],
-                highlightbackground=CYBER["red"],
-                highlightcolor=CYBER["red"],
+                highlightbackground=CYBER["acid"],
+                highlightcolor=CYBER["acid"],
             )
             self.status.configure(text=self.text["server_on"].upper(), fg=CYBER["acid"])
         else:
             self.server_toggle.configure(
-                text=self.text["server_on"].upper(),
-                fg=CYBER["acid"],
+                text="SERVER: OFF",
+                fg=CYBER["red"],
                 activebackground=CYBER["acid"],
-                highlightbackground=CYBER["acid"],
-                highlightcolor=CYBER["acid"],
+                highlightbackground=CYBER["red"],
+                highlightcolor=CYBER["red"],
             )
             if not self.link.connected:
                 self.status.configure(text=self.text["client_mode"].upper(), fg=CYBER["yellow"])
@@ -1929,8 +2368,7 @@ class KyMoRemApp:
 
         if self.engine.remote:
             self.engine.release()
-        self.pending_take_direction = None
-        self.pending_take_entry = None
+        self._clear_pending_take()
         self.server_active = False
         self.engine.enabled = False
         self.config["server_on"] = False
@@ -1941,13 +2379,28 @@ class KyMoRemApp:
         self._save_config()
         self._refresh_server_toggle()
 
+    def _layout_metrics(self, w: int, h: int) -> tuple[int, int, float, float, int, int]:
+        clients = self.config.get("clients", [])
+        xs = [0] + [int(client.get("x", 0)) for client in clients]
+        ys = [0] + [int(client.get("y", 0)) for client in clients]
+        node_w = max(210, min(260, int(w * 0.24)))
+        node_h = max(112, min(138, int(h * 0.18)))
+        margin_x = 36
+        margin_y = 42
+        max_abs_x = max(1, max(abs(value) for value in xs))
+        max_abs_y = max(1, max(abs(value) for value in ys))
+        available_x = max(120.0, (w / 2) - (node_w / 2) - margin_x)
+        available_y = max(96.0, (h / 2) - (node_h / 2) - margin_y)
+        cell_w = max(50.0, min(360.0, available_x / max_abs_x))
+        cell_h = max(45.0, min(260.0, available_y / max_abs_y))
+        center_x = w // 2
+        center_y = h // 2
+        return center_x, center_y, cell_w, cell_h, node_w, node_h
+
     def _point_to_grid(self, x: int, y: int) -> tuple[int, int]:
         w = max(420, self.canvas.winfo_width())
         h = max(320, self.canvas.winfo_height())
-        center_x = w // 2
-        center_y = h // 2
-        cell_w = max(150, min(210, w // 5))
-        cell_h = max(105, min(145, h // 4))
+        center_x, center_y, cell_w, cell_h, _node_w, _node_h = self._layout_metrics(w, h)
         gx = round((x - center_x) / cell_w)
         gy = round((y - center_y) / cell_h)
         gx = max(-4, min(4, gx))
@@ -1998,7 +2451,7 @@ class KyMoRemApp:
         self.tray_icon = pystray.Icon(
             "KyMoRem",
             image,
-            "KyMoRem // Right Edge Router",
+            "KyMoRem // Edge Router",
             self._tray_menu(),
         )
         self.tray_icon.run_detached()
@@ -2055,22 +2508,26 @@ class KyMoRemApp:
         h = max(320, c.winfo_height())
         c.create_rectangle(0, 0, w, h, fill=CYBER["bg2"], outline="")
         self._draw_cyber_grid(w, h)
+        c.create_text(
+            w // 2,
+            h // 2,
+            text=APP_NAME,
+            fill=CYBER["line"],
+            font=("Consolas", max(32, min(96, w // 9)), "bold"),
+            anchor="center",
+        )
+        c.create_text(
+            w // 2,
+            h // 2 + max(36, min(78, w // 18)),
+            text=APP_EXTENDED_NAME.upper(),
+            fill=CYBER["muted"],
+            font=("Consolas", max(9, min(15, w // 90)), "bold"),
+            anchor="center",
+        )
 
         self.client_boxes = {}
-        center_x = w // 2
-        center_y = h // 2
-        gap = 40
-        cell_w = max(210, min(260, w // 4))
-        cell_h = max(145, min(175, h // 3))
-        node_w = 220
-        node_h = 118
         clients = self.config.get("clients", [])
-        if clients and any(int(client.get("x", 0)) > 0 for client in clients) and not any(int(client.get("x", 0)) < 0 for client in clients):
-            cell_w = max(cell_w, node_w + gap)
-            center_x = max(node_w // 2 + 24, min(w - node_w // 2 - 24, w // 2 - (node_w + gap) // 2))
-        elif clients and any(int(client.get("x", 0)) < 0 for client in clients) and not any(int(client.get("x", 0)) > 0 for client in clients):
-            cell_w = max(cell_w, node_w + gap)
-            center_x = max(node_w // 2 + 24, min(w - node_w // 2 - 24, w // 2 + (node_w + gap) // 2))
+        center_x, center_y, cell_w, cell_h, node_w, node_h = self._layout_metrics(w, h)
         server = (center_x - node_w // 2, center_y - node_h // 2, center_x + node_w // 2, center_y + node_h // 2)
         server_state = self.text["server_on"].upper() if self.server_active else self.text["client_mode"].upper()
         self._node_card(server, "SERVER", server_state, CYBER["cyan"], active=self.server_active and not self.engine.remote)
@@ -2082,8 +2539,8 @@ class KyMoRemApp:
         for client in clients:
             gx = int(client.get("x", 1))
             gy = int(client.get("y", 0))
-            cx = max(node_w // 2 + 18, min(w - node_w // 2 - 18, center_x + gx * cell_w))
-            cy = max(node_h // 2 + 18, min(h - node_h // 2 - 18, center_y + gy * cell_h))
+            cx = int(max(node_w // 2 + 18, min(w - node_w // 2 - 18, center_x + gx * cell_w)))
+            cy = int(max(node_h // 2 + 18, min(h - node_h // 2 - 18, center_y + gy * cell_h)))
             box = (cx - node_w // 2, cy - node_h // 2, cx + node_w // 2, cy + node_h // 2)
             key = client_key(client)
             self.client_boxes[key] = box
@@ -2226,6 +2683,7 @@ class KyMoRemApp:
                 self._refresh_client_list()
                 self._draw_layout()
             elif kind == "disconnected":
+                self._clear_pending_take()
                 if self.engine.remote:
                     self.engine.release()
                 if self.server_active:
@@ -2233,6 +2691,11 @@ class KyMoRemApp:
                 else:
                     self.status.configure(text=self.text["client_mode"].upper(), fg=CYBER["yellow"])
                 self._draw_layout()
+        now = time.time()
+        if now >= self.next_prune_ts:
+            self.next_prune_ts = now + 5.0
+            self._prune_transient_clients()
+            self._update_discovery_badge()
         self.root.after(80, self._tick)
 
     def _handle_frame(self, message: dict) -> None:
@@ -2241,11 +2704,9 @@ class KyMoRemApp:
         if kind == "hello":
             self.status.configure(text=self.text["status_connected"], fg="#39e58c")
             self._log(f"Client: {payload.get('name')} {payload.get('width')}x{payload.get('height')}")
-            if self.pending_take_direction and self.server_active:
-                direction = self.pending_take_direction
-                entry = self.pending_take_entry
-                self.pending_take_direction = None
-                self.pending_take_entry = None
+            pending = self._consume_pending_take()
+            if pending:
+                direction, entry = pending
                 self.root.after(120, lambda d=direction, e=entry: self.engine.take(d, e))
             self._draw_layout()
         elif kind == "edge":
