@@ -8,12 +8,14 @@ import os
 import queue
 import re
 import socket
+import subprocess
+import sys
 import threading
 import time
 import uuid
 from pathlib import Path
 
-from kymorem_common import APP_AUTHOR, APP_NAME, DEFAULT_TOKEN, DISCOVERY_PORT, PORT, VERSION, frame
+from kymorem_common import APP_AUTHOR, APP_NAME, DEFAULT_TOKEN, DISCOVERY_PORT, PORT, VERSION, ResolvedToken, discover_runtime_token, frame
 from kymorem_crypto import CryptoError, secure_accept, validate_token
 from kymorem_discovery import DiscoveryBeacon
 
@@ -38,13 +40,21 @@ MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
 MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_HWHEEL = 0x01000
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
 
 MAX_MOVE_DELTA = 4096
 MAX_ACTIVE_SESSIONS = 4
 MAX_FRAMES_PER_SECOND = 1200
 MAX_CLIPBOARD_BYTES = 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
+WHEEL_DELTA_UNIT = 120
+MAX_WHEEL_STEPS_PER_FRAME = 12
 SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._ -]+")
+FIREWALL_RULE_PREFIX = f"{APP_NAME} Win7 Client"
 FALLBACK_RELEASE_KEYS = {
     "VK_LSHIFT",
     "VK_RSHIFT",
@@ -150,6 +160,124 @@ def log(message: str) -> None:
         pass
 
 
+def is_loopback_bind(bind: str) -> bool:
+    value = str(bind).strip().lower()
+    return value in {"127.0.0.1", "localhost"}
+
+
+def is_elevated() -> bool:
+    try:
+        return bool(shell32.IsUserAnAdmin())
+    except OSError:
+        return False
+
+
+def ps_literal(value: str | Path) -> str:
+    return str(value).replace("'", "''")
+
+
+def firewall_rule_names(port: int) -> list[str]:
+    return [
+        f"{FIREWALL_RULE_PREFIX} TCP {port}",
+        f"{FIREWALL_RULE_PREFIX} UDP {DISCOVERY_PORT}",
+    ]
+
+
+def firewall_rule_commands(port: int, action: str) -> list[list[str]]:
+    normalized = str(action).strip().lower()
+    if normalized not in {"add", "delete"}:
+        raise ValueError(f"unsupported firewall action: {action}")
+    base = ["netsh", "advfirewall", "firewall", normalized, "rule"]
+    rules = [
+        (firewall_rule_names(port)[0], "TCP", port),
+        (firewall_rule_names(port)[1], "UDP", DISCOVERY_PORT),
+    ]
+    commands: list[list[str]] = []
+    for name, protocol, local_port in rules:
+        command = [*base, f'name={name}', f'protocol={protocol}', f'localport={local_port}']
+        if normalized == "add":
+            command.extend(["dir=in", "action=allow", "enable=yes", "profile=private", "remoteip=LocalSubnet"])
+        commands.append(command)
+    return commands
+
+
+def configure_firewall_rules(port: int, action: str) -> None:
+    normalized = str(action).strip().lower()
+    if normalized not in {"add", "delete"}:
+        raise ValueError(f"unsupported firewall action: {action}")
+    if not is_elevated():
+        raise RuntimeError("administrator rights required to change Windows Firewall rules")
+    for command in firewall_rule_commands(port, "delete"):
+        subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if normalized == "delete":
+        return
+    for command in firewall_rule_commands(port, "add"):
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip() or "netsh advfirewall failed"
+            raise RuntimeError(message)
+
+
+def firewall_rules_present(port: int) -> bool:
+    for name in firewall_rule_names(port):
+        result = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        output = f"{result.stdout}\n{result.stderr}"
+        if name not in output:
+            return False
+    return True
+
+
+def current_launch_target() -> tuple[str, list[str], str]:
+    if getattr(sys, "frozen", False):
+        executable = Path(sys.executable)
+        return str(executable), [], str(executable.parent)
+    script = Path(__file__).resolve()
+    return sys.executable, [str(script)], str(script.parent)
+
+
+def request_elevated_firewall_install(bind: str, port: int) -> bool:
+    executable, prefix_args, working_dir = current_launch_target()
+    args = [*prefix_args, "--install-firewall-rules", "--bind", bind, "--port", str(port)]
+    arg_list = ", ".join(f"'{ps_literal(item)}'" for item in args)
+    script = (
+        f"$proc = Start-Process -FilePath '{ps_literal(executable)}' -ArgumentList @({arg_list}) "
+        f"-WorkingDirectory '{ps_literal(working_dir)}' -Verb RunAs -Wait -PassThru; "
+        "exit $proc.ExitCode"
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def ensure_firewall_rules(bind: str, port: int) -> None:
+    if is_loopback_bind(bind):
+        return
+    if firewall_rules_present(port):
+        return
+    log("Windows Firewall rules missing; requesting one-time private LAN access setup")
+    if is_elevated():
+        configure_firewall_rules(port, "add")
+    else:
+        if not request_elevated_firewall_install(bind, port):
+            log("Windows Firewall rules were not installed automatically; Windows may still show a firewall prompt")
+            return
+    if firewall_rules_present(port):
+        log(f"Windows Firewall ready on TCP {port} and UDP {DISCOVERY_PORT}")
+        return
+    log("Windows Firewall rules could not be verified; Windows may still show a firewall prompt")
+
+
 def clamp_delta(value) -> int:
     try:
         number = int(value)
@@ -158,8 +286,31 @@ def clamp_delta(value) -> int:
     return max(-MAX_MOVE_DELTA, min(MAX_MOVE_DELTA, number))
 
 
+def clamp_wheel_delta(value) -> int:
+    try:
+        delta = int(value)
+    except (TypeError, ValueError):
+        return 0
+    steps = int(delta / WHEEL_DELTA_UNIT)
+    if steps == 0:
+        return 0
+    steps = max(-MAX_WHEEL_STEPS_PER_FRAME, min(MAX_WHEEL_STEPS_PER_FRAME, steps))
+    return steps * WHEEL_DELTA_UNIT
+
+
 def screen_size() -> tuple[int, int]:
-    return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    _left, _top, width, height = screen_rect()
+    return width, height
+
+
+def screen_rect() -> tuple[int, int, int, int]:
+    left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+    top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+    width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+    height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+    if width <= 0 or height <= 0:
+        return 0, 0, int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
+    return left, top, width, height
 
 
 def pointer_location() -> tuple[int, int]:
@@ -189,24 +340,39 @@ def clamp_axis(value: int, maximum: int, margin: int = 8) -> int:
 
 
 def enter_from_edge(edge: str, x_ratio, y_ratio) -> tuple[int, int, int, int]:
-    width, height = screen_size()
+    left, top, width, height = screen_rect()
     max_x = max(0, width - 1)
     max_y = max(0, height - 1)
-    x = clamp_axis(round(ratio(x_ratio) * max_x), max_x)
-    y = clamp_axis(round(ratio(y_ratio) * max_y), max_y)
+    x = left + clamp_axis(round(ratio(x_ratio) * max_x), max_x)
+    y = top + clamp_axis(round(ratio(y_ratio) * max_y), max_y)
     if edge == "left":
-        x = min(8, max_x)
+        x = left + min(8, max_x)
     elif edge == "right":
-        x = max(0, max_x - 8)
+        x = left + max(0, max_x - 8)
     elif edge == "up":
-        y = min(8, max_y)
+        y = top + min(8, max_y)
     elif edge == "down":
-        y = max(0, max_y - 8)
+        y = top + max(0, max_y - 8)
     user32.SetCursorPos(int(x), int(y))
     move_pointer(1, 0)
     move_pointer(-1, 0)
     log(f"pointer entered from {edge} at {x},{y}")
     return x, y, width, height
+
+
+def edge_names_from_pointer(x: int, y: int, left: int, top: int, width: int, height: int) -> list[str]:
+    right = left + max(0, width - 1)
+    bottom = top + max(0, height - 1)
+    edges: list[str] = []
+    if x <= left + 1:
+        edges.append("left")
+    if x >= right - 1:
+        edges.append("right")
+    if y <= top + 1:
+        edges.append("up")
+    if y >= bottom - 1:
+        edges.append("down")
+    return edges
 
 
 def press_key(name: str, state: str) -> None:
@@ -299,7 +465,7 @@ class WindowsClientAgent:
         self.port = port
         self.name = name
         self.token = token
-        self.width, self.height = screen_size()
+        self.left, self.top, self.width, self.height = screen_rect()
         self.discovery = DiscoveryBeacon(token, "client", name, port)
         self.session_slots = threading.BoundedSemaphore(MAX_ACTIVE_SESSIONS)
         self.file_transfers: dict[str, dict] = {}
@@ -368,12 +534,15 @@ class WindowsClientAgent:
             move_pointer(36, 0)
             move_pointer(-36, 0)
             link.send(frame("pulse_ack", name=self.name))
+        elif kind == "keepalive":
+            link.send(frame("keepalive_ack", name=self.name, screen=f"{self.width}x{self.height}"))
         elif kind == "locate_pointer":
             x, y = pointer_location()
             link.send(frame("pointer_position", name=self.name, x=x, y=y, screen=f"{self.width}x{self.height}"))
         elif kind == "enter":
             edge = str(payload.get("edge", "left"))
             x, y, self.width, self.height = enter_from_edge(edge, payload.get("x_ratio"), payload.get("y_ratio"))
+            self.left, self.top, self.width, self.height = screen_rect()
             link.send(frame("entered", name=self.name, edge=edge, x=x, y=y, screen=f"{self.width}x{self.height}"))
         elif kind == "move":
             move_pointer(clamp_delta(payload.get("dx", 0)), clamp_delta(payload.get("dy", 0)))
@@ -387,7 +556,12 @@ class WindowsClientAgent:
                 self.active_buttons.discard(button)
             press_button(button, state)
         elif kind == "wheel":
-            user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(payload.get("dy", 0)), 0)
+            dx = clamp_wheel_delta(payload.get("dx", 0))
+            dy = clamp_wheel_delta(payload.get("dy", 0))
+            if dy:
+                user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, dy, 0)
+            if dx:
+                user32.mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, dx, 0)
         elif kind == "key":
             key = str(payload.get("key", ""))
             state = str(payload.get("state", "up"))
@@ -418,14 +592,8 @@ class WindowsClientAgent:
 
     def report_edge(self, link) -> None:
         x, y = pointer_location()
-        if x <= 1:
-            link.send(frame("edge", edge="left", x=x, y=y))
-        elif x >= self.width - 2:
-            link.send(frame("edge", edge="right", x=x, y=y))
-        elif y <= 1:
-            link.send(frame("edge", edge="up", x=x, y=y))
-        elif y >= self.height - 2:
-            link.send(frame("edge", edge="down", x=x, y=y))
+        for edge in edge_names_from_pointer(x, y, self.left, self.top, self.width, self.height):
+            link.send(frame("edge", edge=edge, x=x, y=y))
 
     def file_begin(self, payload: dict) -> None:
         transfer_id = str(payload.get("transfer_id", ""))
@@ -475,6 +643,23 @@ class WindowsClientAgent:
         link.send(frame("file_end", transfer_id=transfer_id))
 
 
+def resolve_token(args: argparse.Namespace) -> ResolvedToken:
+    if args.token_file:
+        try:
+            return ResolvedToken(Path(args.token_file).read_text(encoding="utf-8-sig").strip(), "token_file", args.token_file)
+        except OSError as exc:
+            raise CryptoError(f"cannot read token file: {exc}") from exc
+    if args.token:
+        return ResolvedToken(args.token, "token_arg")
+    env_token = os.environ.get("KYMOREM_TOKEN")
+    if env_token:
+        return ResolvedToken(env_token, "env")
+    discovered = discover_runtime_token()
+    if discovered:
+        return discovered
+    return ResolvedToken(DEFAULT_TOKEN, "default")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="KyMoRem Windows 7 compatible client")
     parser.add_argument("--bind", default="0.0.0.0")
@@ -482,13 +667,36 @@ def main() -> int:
     parser.add_argument("--name", default=socket.gethostname())
     parser.add_argument("--token", default=None)
     parser.add_argument("--token-file", default=None)
+    parser.add_argument("--install-firewall-rule", "--install-firewall-rules", dest="install_firewall_rules", action="store_true")
+    parser.add_argument("--remove-firewall-rule", "--remove-firewall-rules", dest="remove_firewall_rules", action="store_true")
     args = parser.parse_args()
+    resolved = None
     try:
-        token = Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file else (args.token or os.environ.get("KYMOREM_TOKEN") or DEFAULT_TOKEN)
-        WindowsClientAgent(args.bind, args.port, args.name, token).serve()
+        if args.install_firewall_rules and args.remove_firewall_rules:
+            raise RuntimeError("choose either --install-firewall-rules or --remove-firewall-rules")
+        if args.install_firewall_rules:
+            if is_loopback_bind(args.bind):
+                log("loopback bind does not require Windows Firewall rules")
+                return 0
+            configure_firewall_rules(args.port, "add")
+            log(f"Windows Firewall rules installed for private LAN traffic on TCP {args.port} and UDP {DISCOVERY_PORT}")
+            return 0
+        if args.remove_firewall_rules:
+            configure_firewall_rules(args.port, "delete")
+            log(f"Windows Firewall rules removed for TCP {args.port} and UDP {DISCOVERY_PORT}")
+            return 0
+        resolved = resolve_token(args)
+        ensure_firewall_rules(args.bind, args.port)
+        WindowsClientAgent(args.bind, args.port, args.name, resolved.value).serve()
     except CryptoError as exc:
-        log(f"security configuration error: {exc}")
+        message = str(exc)
+        if resolved and resolved.source == "default":
+            message = f"{message}; place kymorem-token.txt next to the executable or use --token-file"
+        log(f"security configuration error: {message}")
         return 64
+    except RuntimeError as exc:
+        log(str(exc))
+        return 65
     except KeyboardInterrupt:
         return 0
     return 0

@@ -22,6 +22,40 @@ Release candidate for the Windows host to Linux X11 client path.
 - Diagonal client placements such as bottom-left now expose both active edges
   and the take-control command uses the selected client instead of the old
   right-edge default.
+- Position selection now preserves the interactive `x,y` layout model; saving
+  host/name/port no longer collapses a dragged diagonal client into a single
+  cardinal side.
+- Linux X11 pointer motion now uses tracked absolute coordinates instead of
+  blind relative deltas, preventing pointer stalls at monitor edges.
+- Linux X11 client focuses the window under the pointer when remote control
+  enters the display, so keyboard modifiers and combinations route to the
+  remote desktop.
+- Linux client connection resets are logged cleanly instead of leaking traceback
+  noise or stale active sessions.
+- Global edge routing is ignored while the pointer is over the KyMoRem UI, so
+  menus and window controls remain usable while the server is armed.
+- Host edge detection now activates from an inset band before the physical last
+  pixel and suppresses hot-corner activation zones to avoid Windows corner UI.
+- Host edge detection uses the full virtual desktop rectangle on Windows, so
+  multi-monitor coordinates no longer trigger phantom edges at monitor seams.
+- Remote mouse movement and wheel input are coalesced at a bounded frame rate;
+  high-resolution wheel bursts no longer create unbounded network/input queues.
+- Remote wheel input now has a bounded pending backlog and preserves partial
+  wheel deltas until a real 120-unit wheel step is available.
+- Horizontal wheel input is forwarded separately on Linux X11 and Windows
+  clients for high-end mice with side scroll.
+- Pending edge takeover requests expire and are cancelled if the pointer leaves
+  the originating edge before the encrypted client handshake completes.
+- Pending takeover now also verifies that the encrypted socket endpoint matches
+  the selected client, preventing stale connection races from taking control on
+  the wrong client.
+- Windows client pointer entry and return-edge reporting now use the virtual
+  desktop rectangle instead of primary-monitor metrics.
+- Clients report all active edges at display corners, so returning from diagonal
+  layouts does not get blocked by left/right priority.
+- Linux and Windows clients cap remote wheel batches; the Linux X11 client uses
+  one `xdotool click --repeat N` call per wheel batch instead of one subprocess
+  per wheel tick.
 - Edge routing activates only when a client is configured for that side.
 - Windows mouse movement is no longer suppressed while remote control is active;
   movement is converted to remote delta frames by the control loop.
@@ -34,6 +68,22 @@ Release candidate for the Windows host to Linux X11 client path.
 - X11 key events for Shift, letter and function-key routing.
 - X11 button press/release events.
 - `Ctrl+Esc` emergency release.
+- Automated regression tests for diagonal edge routing and Linux absolute
+  pointer clamping.
+- Direct smoke tests against the installed `linux-iMac` client for ML-KEM
+  handshake, pointer enter/move/locate/release and modifier key release.
+- Automated regression tests for Windows hot-corner suppression and Logitech
+  G502-style wheel burst coalescing.
+- Automated regression tests for virtual desktop edge routing, stale pending
+  takeover cancellation, horizontal wheel forwarding and sub-step wheel
+  remainder preservation.
+- Automated regression tests for wrong-endpoint takeover rejection, Windows
+  virtual-screen client edges, Windows whole-step wheel clamping and client
+  corner return-edge reporting.
+- Windows 7 x86/x64 client executables with encrypted transport smoke-tested on
+  localhost.
+- Android release APKs for arm64-v8a, armeabi-v7a, x86, x86_64, universal APK
+  and release AAB built with local portable JDK/Gradle/Android SDK.
 
 ## 0.1.1
 

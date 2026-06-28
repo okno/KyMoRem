@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -69,6 +72,96 @@ class ClientConfig:
     position: str = "right"
 
 
+@dataclass(frozen=True)
+class ResolvedToken:
+    value: str
+    source: str
+    path: str = ""
+
+
+def runtime_config_dir(env: dict[str, str] | None = None, home: Path | None = None) -> Path:
+    values = os.environ if env is None else env
+    if values.get("APPDATA"):
+        return Path(values["APPDATA"]) / APP_NAME
+    if values.get("XDG_CONFIG_HOME"):
+        return Path(values["XDG_CONFIG_HOME"]) / APP_NAME
+    base = Path.home() if home is None else home
+    if os.name == "posix":
+        return base / ".config" / APP_NAME
+    return base / APP_NAME
+
+
+def runtime_entry_dir(argv0: str | None = None) -> Path:
+    raw = sys.executable if getattr(sys, "frozen", False) else (argv0 or sys.argv[0] or "")
+    if not raw:
+        return Path.cwd()
+    entry = Path(raw)
+    return entry if entry.is_dir() else entry.resolve().parent
+
+
+def _dedupe_dirs(paths: list[Path]) -> list[Path]:
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for item in paths:
+        try:
+            candidate = item.resolve()
+        except OSError:
+            candidate = item
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
+
+
+def _read_text_token(path: Path) -> str | None:
+    try:
+        token = path.read_text(encoding="utf-8-sig").strip()
+    except OSError:
+        return None
+    return token or None
+
+
+def _read_config_token(path: Path) -> str | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    token = str(payload.get("token", "")).strip()
+    return token or None
+
+
+def discover_runtime_token(
+    argv0: str | None = None,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    home: Path | None = None,
+) -> ResolvedToken | None:
+    values = os.environ if env is None else env
+    working_dir = Path.cwd() if cwd is None else cwd
+    sidecar_dirs = _dedupe_dirs([runtime_entry_dir(argv0), working_dir])
+    config_dir = runtime_config_dir(values, home)
+
+    for directory in sidecar_dirs:
+        for filename in ("kymorem-token.txt", "token.txt"):
+            candidate = directory / filename
+            token = _read_text_token(candidate)
+            if token:
+                return ResolvedToken(token, "sidecar_token", str(candidate))
+        for filename in ("kymorem-config.json", "config.json"):
+            candidate = directory / filename
+            token = _read_config_token(candidate)
+            if token:
+                return ResolvedToken(token, "sidecar_config", str(candidate))
+
+    for filename in ("kymorem-token.txt", "config.json"):
+        candidate = config_dir / filename
+        token = _read_text_token(candidate) if filename.endswith(".txt") else _read_config_token(candidate)
+        if token:
+            return ResolvedToken(token, "app_config", str(candidate))
+    return None
+
+
 DEFAULT_CONFIG = {
     "language": "it",
     "theme": "old_school_x11",
@@ -110,6 +203,9 @@ DEFAULT_CONFIG = {
         "from": "kymorem@example.invalid",
         "to": [],
         "events": ["client_connected", "client_disconnected", "security_error"],
+    },
+    "ui": {
+        "opacity": 0.9,
     },
     "clients": [
         {
@@ -159,6 +255,7 @@ TEXT = {
         "save": "Salva",
         "delete": "Elimina",
         "use": "Usa",
+        "clean": "Pulisci offline",
         "up": "Su",
         "left": "Sinistra",
         "right": "Destra",
@@ -170,7 +267,10 @@ TEXT = {
         "get_text": "Ricevi testo",
         "send_files": "Invia file",
         "event_stream": "Eventi",
-        "footer": "CONTROL VECTOR: BORDO DESTRO // RILASCIO: Ctrl+Esc // TROVA PUNTATORE: Ctrl+Shift+M",
+        "advanced": "Avanzate",
+        "transparency": "Trasparenza",
+        "opacity_saved": "Trasparenza UI salvata: {value}%.",
+        "footer": "CONTROL VECTOR: SOLO BORDI CONFIGURATI // RILASCIO: Ctrl+Esc // TROVA PUNTATORE: Ctrl+Shift+M",
         "discovery_off": "Discovery // OFF",
         "discovery_armed": "Discovery // attiva",
         "discovery_disabled": "Discovery // disattivata",
@@ -219,6 +319,7 @@ TEXT = {
         "save": "Save",
         "delete": "Delete",
         "use": "Use",
+        "clean": "Clean offline",
         "up": "Up",
         "left": "Left",
         "right": "Right",
@@ -230,7 +331,10 @@ TEXT = {
         "get_text": "Get text",
         "send_files": "Send files",
         "event_stream": "Event stream",
-        "footer": "CONTROL VECTOR: RIGHT EDGE // RELEASE: Ctrl+Esc // FIND POINTER: Ctrl+Shift+M",
+        "advanced": "Advanced",
+        "transparency": "Transparency",
+        "opacity_saved": "UI transparency saved: {value}%.",
+        "footer": "CONTROL VECTOR: CONFIGURED EDGES ONLY // RELEASE: Ctrl+Esc // FIND POINTER: Ctrl+Shift+M",
         "discovery_off": "Discovery // OFF",
         "discovery_armed": "Discovery // armed",
         "discovery_disabled": "Discovery // disabled",
@@ -279,6 +383,7 @@ TEXT = {
         "save": "Speichern",
         "delete": "Loeschen",
         "use": "Verwenden",
+        "clean": "Offline bereinigen",
         "up": "Oben",
         "left": "Links",
         "right": "Rechts",
@@ -290,7 +395,10 @@ TEXT = {
         "get_text": "Text holen",
         "send_files": "Dateien senden",
         "event_stream": "Ereignisse",
-        "footer": "CONTROL VECTOR: RECHTE KANTE // FREIGABE: Ctrl+Esc // ZEIGER FINDEN: Ctrl+Shift+M",
+        "advanced": "Erweitert",
+        "transparency": "Transparenz",
+        "opacity_saved": "UI-Transparenz gespeichert: {value}%.",
+        "footer": "CONTROL VECTOR: NUR KONFIGURIERTE KANTEN // FREIGABE: Ctrl+Esc // ZEIGER FINDEN: Ctrl+Shift+M",
         "discovery_off": "Discovery // AUS",
         "discovery_armed": "Discovery // aktiv",
         "discovery_disabled": "Discovery // deaktiviert",

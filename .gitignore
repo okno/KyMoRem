@@ -87,6 +87,8 @@ Desktop.ini
 .DS_Store
 
 # Local installer caches
+.build-tools-android/
+.build-tools-win7/
 *.cab
 *.wixpdb
 *.msix

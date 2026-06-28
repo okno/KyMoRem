@@ -68,6 +68,19 @@ requires `clipboard.files_enabled=true`. Incoming files are saved to
 stay below the secure frame limit and each file is bounded by
 `clipboard.max_file_bytes`.
 
+Portable Windows and Win7 clients listen for inbound control traffic on
+`54865/tcp` and advertise discovery on `54866/udp`. To pre-authorize private-LAN
+access without waiting for the first Windows Firewall popup, the client now
+tries to install the required rules automatically on first launch. If you prefer
+to prepare the machine in advance, run the client once as administrator with:
+
+```powershell
+KyMoRem-0.2.0-rc1-windows7-x86-client.exe --install-firewall-rules
+```
+
+The built-in helper installs inbound rules scoped to the `Private` profile and
+`LocalSubnet`. Remove them later with `--remove-firewall-rules`.
+
 The placeholder `kymorem-local-default-change-me` is a development marker, not
 a deployment secret. The runtime refuses it unless
 `KYMOREM_ALLOW_DEFAULT_TOKEN=1` is set for diagnostics.

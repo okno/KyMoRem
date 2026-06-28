@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import queue
 import tempfile
@@ -298,7 +299,121 @@ class LinuxClientPointerTests(unittest.TestCase):
         self.assertEqual(client.edge_names_from_pointer(99, 0, 100, 60), ["right", "up"])
 
 
+class TokenResolutionTests(unittest.TestCase):
+    def test_runtime_token_prefers_sidecar_token_file(self) -> None:
+        import kymorem_common as common
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "KyMoRemClient-Win7-x64.exe"
+            exe.write_text("", encoding="utf-8")
+            sidecar = root / "kymorem-token.txt"
+            sidecar.write_text("shared-secret\n", encoding="utf-8")
+            (root / "kymorem-config.json").write_text(json.dumps({"token": "config-secret"}), encoding="utf-8")
+
+            resolved = common.discover_runtime_token(argv0=str(exe), cwd=root, env={}, home=root / "home")
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.value, "shared-secret")
+        self.assertEqual(resolved.source, "sidecar_token")
+        self.assertTrue(resolved.path.endswith("kymorem-token.txt"))
+
+    def test_runtime_token_reads_sidecar_config_json(self) -> None:
+        import kymorem_common as common
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "KyMoRemClient-Win7-x86.exe"
+            exe.write_text("", encoding="utf-8")
+            config = root / "kymorem-config.json"
+            config.write_text(json.dumps({"token": "config-secret"}), encoding="utf-8")
+
+            resolved = common.discover_runtime_token(argv0=str(exe), cwd=root, env={}, home=root / "home")
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.value, "config-secret")
+        self.assertEqual(resolved.source, "sidecar_config")
+        self.assertTrue(resolved.path.endswith("kymorem-config.json"))
+
+    def test_runtime_token_reads_app_config_when_sidecars_are_missing(self) -> None:
+        import kymorem_common as common
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "KyMoRemClient-Win7-x86.exe"
+            exe.write_text("", encoding="utf-8")
+            appdata = root / "AppData" / "Roaming"
+            config_dir = appdata / "KyMoRem"
+            config_dir.mkdir(parents=True)
+            (config_dir / "config.json").write_text(json.dumps({"token": "saved-secret"}), encoding="utf-8")
+
+            resolved = common.discover_runtime_token(
+                argv0=str(exe),
+                cwd=root,
+                env={"APPDATA": str(appdata)},
+                home=root / "home",
+            )
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.value, "saved-secret")
+        self.assertEqual(resolved.source, "app_config")
+        self.assertTrue(resolved.path.endswith("config.json"))
+
+
 class WindowsClientPointerTests(unittest.TestCase):
+    def test_windows_firewall_commands_stay_private_lan_scoped(self) -> None:
+        import kymorem_windows_client as client
+
+        commands = client.firewall_rule_commands(54865, "add")
+
+        self.assertEqual(len(commands), 2)
+        self.assertTrue(any("protocol=TCP" in part for part in commands[0]))
+        self.assertTrue(any("profile=private" in part for part in commands[0]))
+        self.assertTrue(any("remoteip=LocalSubnet" in part for part in commands[0]))
+        self.assertTrue(any("protocol=UDP" in part for part in commands[1]))
+        self.assertTrue(any(f"localport={client.DISCOVERY_PORT}" in part for part in commands[1]))
+
+    def test_windows_firewall_install_ignores_loopback_bind(self) -> None:
+        import kymorem_windows_client as client
+
+        logs: list[str] = []
+        with mock.patch.object(sys, "argv", ["kymorem_windows_client.py", "--bind", "127.0.0.1", "--install-firewall-rules"]):
+            with mock.patch.object(client, "log", side_effect=logs.append):
+                with mock.patch.object(client, "configure_firewall_rules") as configure:
+                    self.assertEqual(client.main(), 0)
+
+        configure.assert_not_called()
+        self.assertTrue(any("loopback bind" in message for message in logs))
+
+    def test_windows_firewall_auto_setup_requests_elevation_when_rules_are_missing(self) -> None:
+        import kymorem_windows_client as client
+
+        logs: list[str] = []
+        with mock.patch.object(client, "log", side_effect=logs.append):
+            with mock.patch.object(client, "firewall_rules_present", side_effect=[False, True]) as present:
+                with mock.patch.object(client, "is_elevated", return_value=False):
+                    with mock.patch.object(client, "request_elevated_firewall_install", return_value=True) as elevate:
+                        with mock.patch.object(client, "configure_firewall_rules") as configure:
+                            client.ensure_firewall_rules("0.0.0.0", 54865)
+
+        self.assertEqual(present.call_count, 2)
+        elevate.assert_called_once_with("0.0.0.0", 54865)
+        configure.assert_not_called()
+        self.assertTrue(any("requesting one-time private LAN access setup" in message for message in logs))
+        self.assertTrue(any("Windows Firewall ready" in message for message in logs))
+
+    def test_windows_firewall_auto_setup_skips_when_rules_exist(self) -> None:
+        import kymorem_windows_client as client
+
+        with mock.patch.object(client, "firewall_rules_present", return_value=True) as present:
+            with mock.patch.object(client, "request_elevated_firewall_install") as elevate:
+                with mock.patch.object(client, "configure_firewall_rules") as configure:
+                    client.ensure_firewall_rules("0.0.0.0", 54865)
+
+        present.assert_called_once_with(54865)
+        elevate.assert_not_called()
+        configure.assert_not_called()
+
     def test_windows_client_virtual_edges_use_left_top_offsets(self) -> None:
         import kymorem_windows_client as client
 
@@ -321,6 +436,27 @@ class WindowsClientPointerTests(unittest.TestCase):
             client.clamp_wheel_delta(120 * 1000),
             client.MAX_WHEEL_STEPS_PER_FRAME * client.WHEEL_DELTA_UNIT,
         )
+
+    def test_windows_client_keepalive_is_acknowledged(self) -> None:
+        import kymorem_windows_client as client
+
+        sent: list[dict] = []
+
+        class Link:
+            def send(self, message: dict) -> None:
+                sent.append(message)
+
+        agent = client.WindowsClientAgent.__new__(client.WindowsClientAgent)
+        agent.name = "win7-client"
+        agent.width = 1920
+        agent.height = 1080
+
+        agent.dispatch(Link(), "keepalive", {})
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["type"], "keepalive_ack")
+        self.assertEqual(sent[0]["payload"]["name"], "win7-client")
+        self.assertEqual(sent[0]["payload"]["screen"], "1920x1080")
 
 
 if __name__ == "__main__":

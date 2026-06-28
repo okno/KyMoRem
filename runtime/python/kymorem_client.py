@@ -17,7 +17,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from kymorem_common import APP_AUTHOR, APP_NAME, DEFAULT_TOKEN, DISCOVERY_PORT, PORT, VERSION, frame
+from kymorem_common import APP_AUTHOR, APP_NAME, DEFAULT_TOKEN, DISCOVERY_PORT, PORT, VERSION, ResolvedToken, discover_runtime_token, frame
 from kymorem_crypto import CryptoError, secure_accept, validate_token
 from kymorem_discovery import DiscoveryBeacon
 
@@ -51,6 +51,10 @@ MAX_ACTIVE_SESSIONS = 4
 MAX_FRAMES_PER_SECOND = 1200
 MAX_CLIPBOARD_BYTES = 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
+WHEEL_DELTA_UNIT = 120
+MAX_WHEEL_STEPS_PER_FRAME = 12
+EDGE_REPORT_INTERVAL = 0.18
+DISPLAY_AWAKE_INTERVAL = 20.0
 
 KEYS = {
     **{f"VK_{chr(code)}": chr(code).lower() for code in range(ord("A"), ord("Z") + 1)},
@@ -144,6 +148,19 @@ def run_xdotool(*args: str) -> subprocess.CompletedProcess:
     )
 
 
+def run_optional_tool(*args: str) -> subprocess.CompletedProcess | None:
+    if shutil.which(args[0]) is None:
+        return None
+    return subprocess.run(
+        list(args),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env_for_x(),
+    )
+
+
 def clipboard_tool() -> str | None:
     if shutil.which("xclip"):
         return "xclip"
@@ -214,6 +231,8 @@ def safe_filename(name: str) -> str:
 
 def pointer_location() -> tuple[int, int]:
     result = run_xdotool("getmouselocation", "--shell")
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "xdotool getmouselocation failed")
     x = 0
     y = 0
     for line in result.stdout.splitlines():
@@ -222,6 +241,25 @@ def pointer_location() -> tuple[int, int]:
         elif line.startswith("Y="):
             y = int(line.split("=", 1)[1])
     return x, y
+
+
+def pointer_window() -> str | None:
+    result = run_xdotool("getmouselocation", "--shell")
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if line.startswith("WINDOW="):
+            window = line.split("=", 1)[1].strip()
+            if window and window != "0":
+                return window
+    return None
+
+
+def focus_window_under_pointer() -> None:
+    window = pointer_window()
+    if not window:
+        return
+    run_xdotool("windowactivate", "--sync", window)
 
 
 def screen_size() -> tuple[int, int]:
@@ -275,6 +313,17 @@ def release_inputs(keys: set[str], buttons: set[str]) -> None:
         run_xdotool("keyup", key)
 
 
+def keep_display_awake() -> bool:
+    ok = False
+    xset = run_optional_tool("xset", "s", "reset")
+    if xset is not None and xset.returncode == 0:
+        ok = True
+    screensaver = run_optional_tool("xdg-screensaver", "reset")
+    if screensaver is not None and screensaver.returncode == 0:
+        ok = True
+    return ok
+
+
 class ClientAgent:
     def __init__(self, bind: str, port: int, name: str, token: str):
         validate_token(token)
@@ -289,6 +338,14 @@ class ClientAgent:
         self.file_transfers: dict[str, dict] = {}
         self.active_keys: set[str] = set()
         self.active_buttons: set[str] = set()
+        self.pointer_x = self.width // 2
+        self.pointer_y = self.height // 2
+        self.remote_session_active = False
+        self.last_edge_report: dict[str, float] = {}
+        self.last_awake_poke = 0.0
+        self.last_awake_warning = 0.0
+        self.awake_thread = threading.Thread(target=self._keep_awake_loop, daemon=True)
+        self.awake_thread.start()
 
     def serve(self) -> None:
         self._write_pid()
@@ -347,25 +404,55 @@ class ClientAgent:
                     return
                 window_start = time.monotonic()
                 frame_count = 0
-                for message in link.read_frames():
-                    now = time.monotonic()
-                    if now - window_start >= 1.0:
-                        window_start = now
-                        frame_count = 0
-                    frame_count += 1
-                    if frame_count > MAX_FRAMES_PER_SECOND:
-                        log(f"rate limit exceeded by {addr[0]}:{addr[1]}")
-                        link.send(frame("error", message="rate limit exceeded", event="rate_limit"))
-                        break
-                    kind = message.get("type")
-                    payload = message.get("payload", {})
-                    try:
-                        self.dispatch(link, kind, payload)
-                    except Exception as exc:
-                        log(f"dispatch error for {kind}: {exc}")
-                        link.send(frame("error", message=str(exc), event=kind))
+                try:
+                    for message in link.read_frames():
+                        now = time.monotonic()
+                        if now - window_start >= 1.0:
+                            window_start = now
+                            frame_count = 0
+                        frame_count += 1
+                        if frame_count > MAX_FRAMES_PER_SECOND:
+                            log(f"rate limit exceeded by {addr[0]}:{addr[1]}")
+                            link.send(frame("error", message="rate limit exceeded", event="rate_limit"))
+                            break
+                        kind = message.get("type")
+                        payload = message.get("payload", {})
+                        try:
+                            self.dispatch(link, kind, payload)
+                        except Exception as exc:
+                            log(f"dispatch error for {kind}: {exc}")
+                            link.send(frame("error", message=str(exc), event=kind))
+                except (ConnectionResetError, OSError, ValueError) as exc:
+                    log(f"server connection closed from {addr[0]}:{addr[1]}: {exc}")
         finally:
+            self._set_remote_session_active(False)
+            release_inputs(self.active_keys, self.active_buttons)
+            self.active_keys.clear()
+            self.active_buttons.clear()
             self.session_slots.release()
+
+    def _set_remote_session_active(self, active: bool) -> None:
+        self.remote_session_active = bool(active)
+        if active:
+            self.last_edge_report.clear()
+            self._poke_display_awake(force=True)
+
+    def _poke_display_awake(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self.last_awake_poke < DISPLAY_AWAKE_INTERVAL:
+            return
+        self.last_awake_poke = now
+        if keep_display_awake():
+            return
+        if now - self.last_awake_warning >= 60.0:
+            self.last_awake_warning = now
+            log("cannot refresh X11 idle timer; display blanking may resume")
+
+    def _keep_awake_loop(self) -> None:
+        while not self.stop.is_set():
+            if self.remote_session_active:
+                self._poke_display_awake()
+            time.sleep(5.0)
 
     def dispatch(self, link, kind: str, payload: dict) -> None:
         if kind == "hello":
@@ -374,17 +461,24 @@ class ClientAgent:
             self.move_pointer(36, 0)
             self.move_pointer(-36, 0)
             link.send(frame("pulse_ack", name=self.name))
+        elif kind == "keepalive":
+            self._set_remote_session_active(True)
+            self._poke_display_awake(force=True)
+            link.send(frame("keepalive_ack", name=self.name, screen=f"{self.width}x{self.height}"))
         elif kind == "locate_pointer":
             x, y = pointer_location()
             link.send(frame("pointer_position", name=self.name, x=x, y=y, screen=f"{self.width}x{self.height}"))
         elif kind == "enter":
+            self._set_remote_session_active(True)
             edge = str(payload.get("edge", "left"))
             x, y = self.enter_from_edge(edge, payload.get("x_ratio"), payload.get("y_ratio"))
             link.send(frame("entered", name=self.name, edge=edge, x=x, y=y, screen=f"{self.width}x{self.height}"))
         elif kind == "move":
+            self._poke_display_awake()
             self.move_pointer(clamp_delta(payload.get("dx", 0)), clamp_delta(payload.get("dy", 0)))
             self.report_edge(link)
         elif kind == "button":
+            self._poke_display_awake()
             button = BUTTONS.get(str(payload.get("button", "left")), "1")
             state = str(payload.get("state", "up"))
             if state == "down":
@@ -393,11 +487,17 @@ class ClientAgent:
                 self.active_buttons.discard(button)
             run_xdotool("mousedown" if state == "down" else "mouseup", button)
         elif kind == "wheel":
+            self._poke_display_awake()
+            dx = int(payload.get("dx", 0))
             dy = int(payload.get("dy", 0))
-            button = "5" if dy < 0 else "4"
-            for _ in range(max(1, min(8, abs(dy) // 120 or 1))):
-                run_xdotool("click", button)
+            y_steps = wheel_steps(dy)
+            if y_steps:
+                run_xdotool("click", "--repeat", str(y_steps), "5" if dy < 0 else "4")
+            x_steps = wheel_steps(dx)
+            if x_steps:
+                run_xdotool("click", "--repeat", str(x_steps), "7" if dx > 0 else "6")
         elif kind == "key":
+            self._poke_display_awake()
             key = KEYS.get(str(payload.get("key", "")))
             if key:
                 state = str(payload.get("state", "up"))
@@ -407,9 +507,11 @@ class ClientAgent:
                     self.active_keys.discard(key)
                 run_xdotool("keydown" if state == "down" else "keyup", key)
         elif kind == "release":
+            self._set_remote_session_active(False)
             release_inputs(self.active_keys, self.active_buttons)
             self.active_keys.clear()
             self.active_buttons.clear()
+            reset_cursor_shape()
             link.send(frame("released", name=self.name))
         elif kind == "clipboard_text":
             text = str(payload.get("text", ""))
@@ -488,25 +590,43 @@ class ClientAgent:
         run_xdotool("mousemove", str(x), str(y))
         run_xdotool("mousemove_relative", "--", "1", "0")
         run_xdotool("mousemove_relative", "--", "-1", "0")
+        self.pointer_x = x
+        self.pointer_y = y
         reset_cursor_shape()
+        focus_window_under_pointer()
         log(f"pointer entered from {edge} at {x},{y}")
         return x, y
 
     def move_pointer(self, dx: int, dy: int) -> None:
         if dx == 0 and dy == 0:
             return
-        run_xdotool("mousemove_relative", "--", str(dx), str(dy))
+        max_x = max(0, self.width - 1)
+        max_y = max(0, self.height - 1)
+        self.pointer_x = max(0, min(max_x, int(self.pointer_x) + int(dx)))
+        self.pointer_y = max(0, min(max_y, int(self.pointer_y) + int(dy)))
+        result = run_xdotool("mousemove", str(self.pointer_x), str(self.pointer_y))
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "xdotool mousemove failed")
 
     def report_edge(self, link) -> None:
-        x, y = pointer_location()
-        if x <= 1:
-            link.send(frame("edge", edge="left", x=x, y=y))
-        elif x >= self.width - 2:
-            link.send(frame("edge", edge="right", x=x, y=y))
-        elif y <= 1:
-            link.send(frame("edge", edge="up", x=x, y=y))
-        elif y >= self.height - 2:
-            link.send(frame("edge", edge="down", x=x, y=y))
+        try:
+            x, y = pointer_location()
+            self.pointer_x = x
+            self.pointer_y = y
+        except RuntimeError:
+            x, y = self.pointer_x, self.pointer_y
+        now = time.monotonic()
+        edges = edge_names_from_pointer(x, y, self.width, self.height)
+        active_edges = set(edges)
+        self.last_edge_report = {
+            edge: ts for edge, ts in self.last_edge_report.items() if edge in active_edges
+        }
+        for edge in edges:
+            last = float(self.last_edge_report.get(edge, 0.0))
+            if now - last < EDGE_REPORT_INTERVAL:
+                continue
+            self.last_edge_report[edge] = now
+            link.send(frame("edge", edge=edge, x=x, y=y))
 
     def _verify_tools(self) -> None:
         for tool in ["xdotool", "xdpyinfo"]:
@@ -556,6 +676,32 @@ def clamp_delta(value) -> int:
     return max(-MAX_MOVE_DELTA, min(MAX_MOVE_DELTA, number))
 
 
+def wheel_steps(value) -> int:
+    try:
+        delta = int(value)
+    except (TypeError, ValueError):
+        return 0
+    steps = abs(delta) // WHEEL_DELTA_UNIT
+    if steps == 0:
+        return 0
+    return min(MAX_WHEEL_STEPS_PER_FRAME, steps)
+
+
+def edge_names_from_pointer(x: int, y: int, width: int, height: int) -> list[str]:
+    max_x = max(0, width - 1)
+    max_y = max(0, height - 1)
+    edges: list[str] = []
+    if x <= 1:
+        edges.append("left")
+    if x >= max_x - 1:
+        edges.append("right")
+    if y <= 1:
+        edges.append("up")
+    if y >= max_y - 1:
+        edges.append("down")
+    return edges
+
+
 def _cmdline_for_pid(pid: str) -> str:
     try:
         return Path(f"/proc/{pid}/cmdline").read_text(encoding="utf-8", errors="ignore").replace("\x00", " ")
@@ -580,13 +726,21 @@ def free_socket(port: int, proto: str = "tcp") -> None:
             log(f"cannot stop pid {pid} on {port}/{proto}: {exc}")
 
 
-def resolve_token(args: argparse.Namespace) -> str:
+def resolve_token(args: argparse.Namespace) -> ResolvedToken:
     if args.token_file:
         try:
-            return Path(args.token_file).read_text(encoding="utf-8").strip()
+            return ResolvedToken(Path(args.token_file).read_text(encoding="utf-8-sig").strip(), "token_file", args.token_file)
         except OSError as exc:
             raise CryptoError(f"cannot read token file: {exc}") from exc
-    return args.token or os.environ.get("KYMOREM_TOKEN") or DEFAULT_TOKEN
+    if args.token:
+        return ResolvedToken(args.token, "token_arg")
+    env_token = os.environ.get("KYMOREM_TOKEN")
+    if env_token:
+        return ResolvedToken(env_token, "env")
+    discovered = discover_runtime_token()
+    if discovered:
+        return discovered
+    return ResolvedToken(DEFAULT_TOKEN, "default")
 
 
 def main() -> int:
@@ -601,11 +755,16 @@ def main() -> int:
     stop_running_instance()
     free_socket(args.port, "tcp")
     free_socket(DISCOVERY_PORT, "udp")
+    resolved = None
     try:
-        agent = ClientAgent(args.bind, args.port, args.name, resolve_token(args))
+        resolved = resolve_token(args)
+        agent = ClientAgent(args.bind, args.port, args.name, resolved.value)
         agent.serve()
     except CryptoError as exc:
-        log(f"security configuration error: {exc}")
+        message = str(exc)
+        if resolved and resolved.source == "default":
+            message = f"{message}; place kymorem-token.txt next to the executable or use --token-file"
+        log(f"security configuration error: {message}")
         return 64
     except KeyboardInterrupt:
         return 0
