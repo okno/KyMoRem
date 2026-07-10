@@ -1,6 +1,6 @@
 # Cryptography
 
-KyMoRem v0.2.0-rc1 uses a cryptographic transport layer around the JSON protocol.
+KyMoRem v0.2.0-rc2 uses a cryptographic transport layer around the JSON protocol.
 
 ## Suites
 

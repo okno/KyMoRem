@@ -52,7 +52,7 @@ MAX_FRAMES_PER_SECOND = 1200
 MAX_CLIPBOARD_BYTES = 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
 WHEEL_DELTA_UNIT = 120
-MAX_WHEEL_STEPS_PER_FRAME = 12
+MAX_WHEEL_STEPS_PER_FRAME = 4
 SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._ -]+")
 FIREWALL_RULE_PREFIX = f"{APP_NAME} Win7 Client"
 FALLBACK_RELEASE_KEYS = {
@@ -176,6 +176,17 @@ def ps_literal(value: str | Path) -> str:
     return str(value).replace("'", "''")
 
 
+def run_text_command(command: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        check=False,
+    )
+
+
 def firewall_rule_names(port: int) -> list[str]:
     return [
         f"{FIREWALL_RULE_PREFIX} TCP {port}",
@@ -208,11 +219,11 @@ def configure_firewall_rules(port: int, action: str) -> None:
     if not is_elevated():
         raise RuntimeError("administrator rights required to change Windows Firewall rules")
     for command in firewall_rule_commands(port, "delete"):
-        subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        run_text_command(command)
     if normalized == "delete":
         return
     for command in firewall_rule_commands(port, "add"):
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        result = run_text_command(command)
         if result.returncode != 0:
             message = result.stderr.strip() or result.stdout.strip() or "netsh advfirewall failed"
             raise RuntimeError(message)
@@ -220,13 +231,7 @@ def configure_firewall_rules(port: int, action: str) -> None:
 
 def firewall_rules_present(port: int) -> bool:
     for name in firewall_rule_names(port):
-        result = subprocess.run(
-            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
+        result = run_text_command(["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"])
         output = f"{result.stdout}\n{result.stderr}"
         if name not in output:
             return False
@@ -250,13 +255,7 @@ def request_elevated_firewall_install(bind: str, port: int) -> bool:
         f"-WorkingDirectory '{ps_literal(working_dir)}' -Verb RunAs -Wait -PassThru; "
         "exit $proc.ExitCode"
     )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    result = run_text_command(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
     return result.returncode == 0
 
 
@@ -501,7 +500,8 @@ class WindowsClientAgent:
                     )
                     conn.settimeout(None)
                     link.send(frame("hello", role="client", name=self.name, os="windows", width=self.width, height=self.height))
-                    log(f"secure transport established with {addr[0]}:{addr[1]} using {link.suite}")
+                    if str(link.peer.get("role", "")) != "health":
+                        log(f"secure transport established with {addr[0]}:{addr[1]} using {link.suite}")
                 except CryptoError as exc:
                     log(f"secure handshake rejected from {addr[0]}:{addr[1]}: {exc}")
                     return
@@ -528,7 +528,9 @@ class WindowsClientAgent:
                 link.send(frame("error", message=str(exc), event=message.get("type")))
 
     def dispatch(self, link, kind: str, payload: dict) -> None:
-        if kind == "hello":
+        if kind == "health_probe":
+            link.send(frame("health_ack", name=self.name, os="windows", screen=f"{self.width}x{self.height}"))
+        elif kind == "hello":
             link.send(frame("status", state="connected", name=self.name))
         elif kind == "pulse":
             move_pointer(36, 0)
@@ -591,9 +593,10 @@ class WindowsClientAgent:
             self.file_end(link, payload)
 
     def report_edge(self, link) -> None:
+        self.left, self.top, self.width, self.height = screen_rect()
         x, y = pointer_location()
         for edge in edge_names_from_pointer(x, y, self.left, self.top, self.width, self.height):
-            link.send(frame("edge", edge=edge, x=x, y=y))
+            link.send(frame("edge", edge=edge, x=x, y=y, left=self.left, top=self.top, width=self.width, height=self.height))
 
     def file_begin(self, payload: dict) -> None:
         transfer_id = str(payload.get("transfer_id", ""))

@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.2.0-rc2
+
+Super Route release for multi-client routing, Windows 7 onboarding and
+high-load input stability.
+
+### Added
+
+- Official KMR logo assets under `assets/brand`.
+- Windows 7 package generator with automatic token generation, server approval,
+  firewall helper, sidecar token file, restart command and optional zip output.
+- Linux client package generator that reuses the server-approved token and
+  prepares user-level daemon deployment.
+- `AGGIORNA` refresh action in the server UI.
+- Centered Control Center placement relative to the KyMoRem window.
+- Configured-client health inventory, including pending and offline clients.
+- Server-side pending approval flow for discovery clients with `host=pending`.
+- Regression coverage for multi-hop edge routing, endpoint switching and wheel
+  throttling.
+- Root and localized FAQ pages with symptom, cause and fix entries from rc2
+  development/testing.
+
+### Changed
+
+- Runtime version is now `0.2.0-rc2`.
+- The server disconnects an active remote endpoint before taking control of a
+  different client.
+- Client routing now follows the saved layout grid after refresh, including
+  client-to-client transitions.
+- Remote wheel handling is coalesced and capped at a lower burst rate to avoid
+  infinite-scroll backlogs.
+- Unknown discovery clients are kept disabled unless explicit auto-approval is
+  enabled.
+- README, release notes and IT/EN/CH quick starts now document Linux plus
+  Windows 7 workflows.
+- Packaging/version metadata now defaults to `0.2.0-rc2`.
+
+### Fixed
+
+- Stale Linux remote links could prevent switching into Windows 7 after a
+  client-to-client edge transition.
+- Discovery counters could show confusing states when configured clients were
+  online but not counted as discovery-online.
+- Windows 7 package startup could fail when a strong token was not provisioned
+  next to the executable.
+- High-resolution mouse wheels could queue too many scroll commands and freeze
+  perceived input until the backlog drained.
+
+### Verified
+
+- Direct secure smoke test against `linux-iMac` at `10.0.0.80:54865`.
+- Direct secure smoke test against `windows7` at `10.0.0.49:54865`.
+- Server-side route switch into Windows 7 from a non-server edge.
+- `python -m unittest tests.test_kymorem_routing`.
+
 ## 0.2.0-rc1
 
 Release candidate for the Windows host to Linux X11 client path.

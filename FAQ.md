@@ -1,74 +1,221 @@
-# KyMoRem FAQ
+# KyMoRem FAQ and Troubleshooting
+
+This FAQ documents the real problems found during rc2 development and testing,
+with the operational fix for each one.
 
 ## What is KyMoRem?
 
-KyMoRem is a LAN keyboard and mouse remote-control system. One host machine
-owns the physical input devices; one or more clients receive encrypted pointer,
-button, wheel and key frames.
+KyMoRem is a LAN keyboard and mouse sharing system. One host owns the physical
+input devices; approved clients receive encrypted pointer, button, wheel,
+clipboard and key frames.
+
+## Which platforms work in v0.2.0-rc2?
+
+Release-grade path:
+
+- Windows x64 host with the KMR route console.
+- Linux x64 X11 client with `xdotool` input injection.
+- Windows 7 x86/x64 client through the generated client package.
+
+Scaffolded targets remain for Android, macOS and Rust native agents.
 
 ## Is KyMoRem compatible with Barrier?
 
-No. KyMoRem uses a similar screen-edge workflow but has its own implementation,
-protocol, discovery layer and security model.
+No. KyMoRem uses a similar screen-edge workflow but has its own protocol,
+discovery layer, security model and routing logic.
 
-## Which Barrier pain points does KyMoRem address?
+## Definitive recovery when a client does not work
 
-KyMoRem was hardened against common public Barrier failure modes: vague
-"starting" loops, missing SSL certificate bootstrap, Wayland clients that appear
-to run but cannot inject input, clipboard stalls, and Bonjour/Avahi discovery
-confusion. The technical matrix is in
-[docs/barrier-field-issues.md](docs/barrier-field-issues.md).
+Use this sequence before deeper debugging:
 
-## Which platforms work today?
+1. On the server, press `RILASCIA` or `Ctrl+Esc`.
+2. Close every old KyMoRem client window on the target machine.
+3. Restart the server KyMoRem app.
+4. Regenerate the target package from the server token.
+5. Install/start the target package.
+6. Press `AGGIORNA` on the server.
+7. Verify the card is `ONLINE`.
+8. Enter from the configured edge.
 
-Release-grade path in v0.2.0-rc1:
+## Windows 7 receives no mouse or keyboard events
 
-- Windows x64 host with Cyber Noir UI and system tray.
-- Linux x64 X11 client with `xdotool` input injection.
-- Linux standalone package for manual tests and user-level daemon install.
+Probable causes:
 
-Scaffolded targets:
+- old Win7 executable still running;
+- wrong architecture package on Windows 7;
+- missing firewall rule on `54865/tcp`;
+- package started without the generated token file;
+- server layout was changed but not refreshed.
 
-- macOS packaging.
-- Android app shell.
-- Rust native agent.
+Fix:
 
-## Is the transport encrypted?
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemWin7ClientPackage.ps1 -Arch x86 -Name windows7 -Direction down -Zip
+```
 
-Yes. The TCP input channel is encrypted with AES-256-GCM. The preferred key
-establishment suite uses ML-KEM-768 plus the shared token when the optional PQ
-provider is available. If not, KyMoRem logs and uses the PSK-HKDF fallback.
+Copy the generated folder or zip to Windows 7, then run
+`Install-Firewall-And-Start.cmd` as Administrator. Leave the black client
+window open. On the server press `AGGIORNA`.
 
-## What does discovery do?
+Use `-Arch x64` only when the Windows 7 installation is really 64 bit.
 
-Discovery broadcasts encrypted endpoint announcements on `54866/udp`. The host
-can classify endpoints as host or client and autoconnect to the first valid
-client when the configured host is still the loopback placeholder.
+## The Windows 7 console says secure handshake rejected
 
-## Why does Linux run as a user service?
+If the message mentions that cryptography is required, the client is an old or
+incomplete binary. Install the rc2 generated package.
 
-Input injection needs access to the active X11 session. A system service often
-does not have `DISPLAY`, `XAUTHORITY` or the user DBus session.
+If the message appears repeatedly from the server IP, host and client tokens do
+not match. Do not type the token by hand. Regenerate the package from the
+server so `kymorem-token.txt` and `%APPDATA%\KyMoRem\config.json` match.
 
-## Does Wayland work?
+## Windows 7 shows `UnicodeDecodeError` or `charmap`
 
-Not as a full input-injection target in v0.2.0-rc1. Wayland blocks global input
-injection in many compositors. The Linux client detects Wayland and exits with a
-clear diagnostic unless an explicit diagnostic override is set.
+This was seen with older helper output on Italian Windows 7 consoles. The rc2
+package avoids localized command output in the normal startup path. Regenerate
+and reinstall the package. If an old console is still open, close it before
+starting the new one.
 
-## How do I exit remote control mode?
+## Server shows `0 client` but cards are online
 
-Use either:
+Discovery and health are different signals:
 
-- move the pointer to the left edge on the Linux client;
-- press `Ctrl+Esc` on the Windows host.
+- discovery is UDP broadcast on `54866/udp`;
+- online health can be verified with TCP on `54865/tcp`.
 
-## Where are logs?
+Wi-Fi isolation, VLANs or Windows Firewall can block UDP while TCP still works.
+If the card is configured and reachable, routing can still work. Press
+`AGGIORNA`, verify the client card, and use a manual `host` value when broadcast
+is unreliable.
+
+## A client is online, another is standby/down
+
+Check the target:
 
 Windows:
 
+```cmd
+netstat -ano | find "54865"
+```
+
+Linux:
+
+```bash
+ss -ltnp | grep 54865
+```
+
+Then verify host, port and name in the server card. Duplicate names or stale
+clients can make the wrong slot appear selected.
+
+## I moved machines in the server UI but routing did not change
+
+Required sequence:
+
+1. Select the client card.
+2. Move it with the UI controls or drag it.
+3. Press `SALVA`.
+4. Press `AGGIORNA`.
+5. Release current control with `Ctrl+Esc`.
+6. Enter again from the new edge.
+
+The route decision is made on the next edge transition. A control session that
+is already active keeps its current endpoint until release or switch.
+
+## I cannot reach Windows 7 from linux-iMac
+
+Install rc2 on the server and the Win7 client. The rc2 server explicitly closes
+the old remote endpoint before connecting to the next client. Older builds
+could keep the Linux endpoint alive and ignore the Win7 route transition.
+
+Also verify that the grid is adjacent. Example:
+
+```text
+server    x=0 y=0
+linux-iMac x=1 y=0
+windows7  x=2 y=0
+```
+
+This means leaving the right edge of `linux-iMac` goes to `windows7`.
+
+## I go down to Windows 7 but no arrow appears
+
+Check that `windows7` is really below the server:
+
+```text
+server   x=0 y=0
+windows7 x=0 y=1
+```
+
+Save, refresh and retry from the bottom edge. If the Win7 card is `down` but
+`STANDBY`, the server has layout information but no live TCP client.
+
+## The server keeps a visible cursor while I am on a client
+
+The host pointer is used only as an edge trigger and recovery anchor. During
+remote mode the useful pointer is on the client. Use `Ctrl+Esc` or the return
+edge to release. If the host cursor still appears to chase motion, update to
+rc2 and restart the host app so injected/stale motion filters are active.
+
+## Infinite scroll freezes everything
+
+This happens when old builds send every high-resolution wheel tick to every
+active client. In rc2 the host coalesces wheel movement, caps pending steps and
+clears queues on release/switch. Install rc2 on host and clients. If a backlog
+was already created, press `Ctrl+Esc` and restart the affected client.
+
+## Linux client is online but input does not move
+
+Verify X11 input injection:
+
+```bash
+echo "$XDG_SESSION_TYPE"
+echo "$DISPLAY"
+ls -l "$HOME/.Xauthority"
+command -v xdotool
+xdotool getmouselocation
+```
+
+For rc2, production Linux input injection requires X11. Wayland is detected and
+rejected unless a diagnostic override is set.
+
+## Clipboard does not sync
+
+On Linux install a clipboard tool:
+
+```bash
+sudo apt install xclip xsel
+```
+
+Enable `TESTO` in the server UI for text clipboard. Enable `FILE` only on
+trusted clients because file transfer is intentionally bounded but still moves
+data between machines.
+
+## Passwords for Windows or Linux users are not used
+
+KyMoRem does not log in with SMB, RDP or SSH for normal operation. Runtime
+trust is based on the shared token and approved client list. Operating-system
+user passwords are only useful when you manually administer a machine.
+
+## Which ports are required?
+
+```text
+54865/tcp  encrypted control/input session
+54866/udp  encrypted LAN discovery
+```
+
+Limit both ports to trusted LAN segments.
+
+## Where are logs?
+
+Windows host:
+
 ```text
 %APPDATA%\KyMoRem\server.log
+```
+
+Windows 7 package:
+
+```text
+kymorem-win7-client.log
 ```
 
 Linux:
@@ -76,10 +223,13 @@ Linux:
 ```text
 ${XDG_RUNTIME_DIR:-/tmp/kymorem-$UID}/kymorem-client.log
 ${XDG_RUNTIME_DIR:-/tmp/kymorem-$UID}/kymorem-tray.log
-/tmp/kymorem-tray.launch.log
 ```
 
-## Which languages are included?
+## What should I attach to a bug report?
 
-Only IT, EN and CH are included in v0.2.0-rc1 runtime strings, packaging metadata
-and localized documentation.
+- KyMoRem version.
+- Server `config.json` with token removed.
+- Last 120 lines of server log.
+- Last 120 lines of client log.
+- Screenshot of the route map.
+- Exact physical movement: for example `server bottom edge -> windows7`.

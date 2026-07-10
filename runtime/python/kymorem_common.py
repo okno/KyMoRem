@@ -11,7 +11,7 @@ from typing import Any
 
 
 APP_NAME = "KyMoRem"
-VERSION = "0.2.0-rc1"
+VERSION = "0.2.0-rc2"
 APP_SHORT_MARK = "KMR"
 APP_EXTENDED_NAME = "Keyboard Mouse Remote"
 APP_AUTHOR = "Pawel Zorzan Urban AKA okno"
@@ -191,6 +191,7 @@ DEFAULT_CONFIG = {
     "discovery": {
         "enabled": True,
         "auto_connect": True,
+        "auto_approve": False,
         "udp_port": DISCOVERY_PORT,
     },
     "email_relay": {
@@ -255,6 +256,7 @@ TEXT = {
         "save": "Salva",
         "delete": "Elimina",
         "use": "Usa",
+        "refresh": "Aggiorna",
         "clean": "Pulisci offline",
         "up": "Su",
         "left": "Sinistra",
@@ -280,7 +282,10 @@ TEXT = {
         "link_online_route": "Link online // routing bordo armato",
         "link_offline_route": "Link offline // seleziona o scopri nodo",
         "remote_route": "Controllo remoto attivo // ritorno dal bordo sinistro",
+        "active": "Attivo",
+        "connected_node": "Connesso",
         "online": "Online",
+        "offline": "Offline",
         "standby": "Standby",
         "selected": "selezionato",
         "open_app": "Apri KyMoRem",
@@ -319,6 +324,7 @@ TEXT = {
         "save": "Save",
         "delete": "Delete",
         "use": "Use",
+        "refresh": "Refresh",
         "clean": "Clean offline",
         "up": "Up",
         "left": "Left",
@@ -344,7 +350,10 @@ TEXT = {
         "link_online_route": "Link online // edge routing armed",
         "link_offline_route": "Link offline // select or discover node",
         "remote_route": "Remote control active // return via left edge",
+        "active": "Active",
+        "connected_node": "Connected",
         "online": "Online",
+        "offline": "Offline",
         "standby": "Standby",
         "selected": "selected",
         "open_app": "Open KyMoRem",
@@ -383,6 +392,7 @@ TEXT = {
         "save": "Speichern",
         "delete": "Loeschen",
         "use": "Verwenden",
+        "refresh": "Aktualisieren",
         "clean": "Offline bereinigen",
         "up": "Oben",
         "left": "Links",
@@ -408,7 +418,10 @@ TEXT = {
         "link_online_route": "Link online // Kantenrouting aktiv",
         "link_offline_route": "Link offline // Knoten waehlen oder suchen",
         "remote_route": "Fernsteuerung aktiv // Rueckkehr ueber linke Kante",
+        "active": "Aktiv",
+        "connected_node": "Verbunden",
         "online": "Online",
+        "offline": "Offline",
         "standby": "Standby",
         "selected": "gewaehlt",
         "open_app": "KyMoRem oeffnen",

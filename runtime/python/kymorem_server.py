@@ -137,6 +137,7 @@ WM_MBUTTONDOWN = 0x0207
 WM_MBUTTONUP = 0x0208
 WM_MOUSEWHEEL = 0x020A
 WM_MOUSEHWHEEL = 0x020E
+LLMHF_INJECTED = 0x00000001
 HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 MOUSE_BUTTON_MESSAGES = {
     WM_LBUTTONDOWN: ("left", "down"),
@@ -378,6 +379,7 @@ POSITION_LABELS = {
 }
 POSITION_VALUES = {value: key for key, value in POSITION_LABELS.items()}
 RETURN_EDGE = {"right": "left", "left": "right", "up": "down", "down": "up"}
+EDGE_DELTAS = {"right": (1, 0), "left": (-1, 0), "up": (0, -1), "down": (0, 1)}
 MAX_CLIENTS = 9
 MIN_EDGE_INTERVAL = 0.45
 RELEASE_EDGE_MARGIN = 32
@@ -385,12 +387,18 @@ EDGE_TRIGGER_INSET = 3
 EDGE_CORNER_GUARD = 10
 DISCOVERY_CLIENT_TTL = 18.0
 DISCOVERY_CONFIG_TTL = 45.0
+CLIENT_HEALTH_PROBE_INTERVAL = 12.0
+CLIENT_HEALTH_TTL = 36.0
+CLIENT_HEALTH_OFFLINE_GRACE = 180.0
+CLIENT_HEALTH_TIMEOUT = 2.5
+PENDING_CLIENT_HOSTS = {"", "pending", "auto", "discover", "dhcp"}
 STARTUP_ALPHA = 0.90
 STARTUP_ASPECT = 16 / 9
 INPUT_FLUSH_INTERVAL = 1 / 60
+WHEEL_FLUSH_INTERVAL = 1 / 30
 MAX_DISCRETE_INPUT_BURST = 96
-MAX_WHEEL_STEPS_PER_FLUSH = 12
-MAX_PENDING_WHEEL_STEPS = 24
+MAX_WHEEL_STEPS_PER_FLUSH = 3
+MAX_PENDING_WHEEL_STEPS = 6
 WHEEL_DELTA_UNIT = 120
 PENDING_EDGE_TAKE_TTL = 2.0
 PENDING_MANUAL_TAKE_TTL = 15.0
@@ -454,6 +462,27 @@ def windows_clipboard_files() -> list[Path]:
 def safe_filename(name: str) -> str:
     cleaned = SAFE_FILENAME.sub("_", Path(name).name).strip(" .")
     return cleaned[:160] or "kymorem-file"
+
+
+def centered_child_geometry(
+    parent_x: int,
+    parent_y: int,
+    parent_w: int,
+    parent_h: int,
+    child_w: int,
+    child_h: int,
+    screen_x: int,
+    screen_y: int,
+    screen_w: int,
+    screen_h: int,
+) -> str:
+    x = int(parent_x) + max(0, int(parent_w) - int(child_w)) // 2
+    y = int(parent_y) + max(0, int(parent_h) - int(child_h)) // 2
+    max_x = int(screen_x) + max(0, int(screen_w) - int(child_w))
+    max_y = int(screen_y) + max(0, int(screen_h) - int(child_h))
+    x = max(int(screen_x), min(max_x, x))
+    y = max(int(screen_y), min(max_y, y))
+    return f"{int(child_w)}x{int(child_h)}+{x}+{y}"
 
 
 def local_ip_hint() -> str:
@@ -529,8 +558,47 @@ def terminate_previous_instances() -> int:
     return killed
 
 
+def client_endpoint(client: dict) -> tuple[str, int]:
+    host = str(client.get("host", ""))
+    try:
+        port = int(client.get("port", PORT))
+    except (TypeError, ValueError):
+        port = PORT
+    return host, port
+
+
 def client_key(client: dict) -> str:
-    return f"{client.get('host', '')}:{int(client.get('port', PORT))}"
+    host, port = client_endpoint(client)
+    return f"{host}:{port}"
+
+
+def endpoint_key(endpoint: tuple[str, int] | None) -> str:
+    if not endpoint:
+        return ""
+    host, port = endpoint
+    return f"{host}:{int(port)}"
+
+
+def is_pending_client_host(host: str) -> bool:
+    return str(host or "").strip().lower() in PENDING_CLIENT_HOSTS
+
+
+def pending_client_by_name(clients: list[dict], name: str, port: int) -> dict | None:
+    normalized_name = str(name or "").strip().lower()
+    if not normalized_name:
+        return None
+    for client in clients:
+        if not bool(client.get("enabled", True)):
+            continue
+        if str(client.get("name", "")).strip().lower() != normalized_name:
+            continue
+        try:
+            client_port = int(client.get("port", PORT))
+        except (TypeError, ValueError):
+            client_port = PORT
+        if client_port == int(port) and is_pending_client_host(str(client.get("host", ""))):
+            return client
+    return None
 
 
 def is_test_client(client: dict | None = None, *, name: str = "", host: str = "") -> bool:
@@ -577,6 +645,56 @@ def client_edges_from_grid(x: int, y: int) -> list[str]:
     return edges or ["right"]
 
 
+def client_grid(client: dict) -> tuple[int, int]:
+    try:
+        return int(client.get("x", 1)), int(client.get("y", 0))
+    except (TypeError, ValueError):
+        return 1, 0
+
+
+def ratio_from_axis(value, origin: int, length: int) -> float:
+    try:
+        raw = (float(value) - float(origin)) / max(1.0, float(length) - 1.0)
+    except (TypeError, ValueError):
+        raw = 0.5
+    return max(0.0, min(1.0, raw))
+
+
+def parse_screen_dimensions(value: str) -> tuple[int, int]:
+    match = re.search(r"(\d+)\s*x\s*(\d+)", str(value or ""))
+    if not match:
+        return 0, 0
+    return int(match.group(1)), int(match.group(2))
+
+
+def edge_entry_from_client_payload(edge: str, payload: dict, fallback: dict | None = None) -> dict:
+    fallback = fallback or {}
+    width, height = parse_screen_dimensions(str(payload.get("screen", "") or fallback.get("screen", "")))
+    try:
+        width = int(payload.get("width", fallback.get("width", width)) or width)
+    except (TypeError, ValueError):
+        width = 0
+    try:
+        height = int(payload.get("height", fallback.get("height", height)) or height)
+    except (TypeError, ValueError):
+        height = 0
+    try:
+        left = int(payload.get("left", fallback.get("left", 0)) or 0)
+    except (TypeError, ValueError):
+        left = 0
+    try:
+        top = int(payload.get("top", fallback.get("top", 0)) or 0)
+    except (TypeError, ValueError):
+        top = 0
+    return {
+        "direction": edge,
+        "x_ratio": ratio_from_axis(payload.get("x"), left, width),
+        "y_ratio": ratio_from_axis(payload.get("y"), top, height),
+        "ts": time.monotonic(),
+        "source": "client_edge",
+    }
+
+
 def normalize_client(raw: dict, index: int = 0) -> dict:
     client = dict(raw or {})
     if not client.get("name"):
@@ -602,6 +720,99 @@ def normalize_client(raw: dict, index: int = 0) -> dict:
     client["enabled"] = bool(client.get("enabled", True))
     client["source"] = str(client.get("source", "manual"))
     return client
+
+
+def is_selectable_client(client: dict) -> bool:
+    source = str(client.get("source", "manual")).lower()
+    return bool(client.get("enabled", True)) and source != "discovery_pending"
+
+
+def reserve_client_position(client: dict, clients: list[dict], exclude_key: str = "") -> dict:
+    candidate = normalize_client(client)
+    occupied = {
+        (int(item.get("x", 0)), int(item.get("y", 0)))
+        for item in clients
+        if client_key(item) != exclude_key and is_selectable_client(item)
+    }
+    x, y = client_grid(candidate)
+    if (x, y) not in occupied:
+        return candidate
+    step_x = -1 if x < 0 else 1 if x > 0 else 0
+    step_y = -1 if y < 0 else 1 if y > 0 else 0
+    if step_x == 0 and step_y == 0:
+        step_x = 1
+    for distance in range(1, 5):
+        next_x = step_x * distance if step_x else 0
+        next_y = step_y * distance if step_y else 0
+        if (next_x, next_y) not in occupied and (next_x, next_y) != (0, 0):
+            candidate["x"] = next_x
+            candidate["y"] = next_y
+            candidate["position"] = position_from_grid(next_x, next_y)
+            return candidate
+    next_x, next_y = next_free_position([item for item in clients if client_key(item) != exclude_key])
+    candidate["x"] = next_x
+    candidate["y"] = next_y
+    candidate["position"] = position_from_grid(next_x, next_y)
+    return candidate
+
+
+def normalize_layout_clients(clients: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for index, client in enumerate(clients):
+        candidate = normalize_client(client, index)
+        if not is_selectable_client(candidate):
+            normalized.append(candidate)
+            continue
+        normalized.append(reserve_client_position(candidate, normalized, client_key(candidate)))
+    return normalized
+
+
+def probe_secure_client(host: str, port: int, token: str, timeout: float = CLIENT_HEALTH_TIMEOUT) -> dict:
+    started = time.monotonic()
+    result = {
+        "key": f"{host}:{int(port)}",
+        "host": host,
+        "port": int(port),
+        "state": "offline",
+        "source": "secure_probe",
+        "detail": "",
+        "latency_ms": 0,
+        "seen": time.time(),
+    }
+    sock: socket.socket | None = None
+    try:
+        sock = socket.create_connection((host, int(port)), timeout=timeout)
+        sock.settimeout(timeout)
+        link = secure_connect(sock, token, {"role": "health", "name": "KyMoRem health", "version": VERSION})
+        peer = dict(getattr(link, "peer", {}) or {})
+        result.update(
+            {
+                "state": "online",
+                "source": "secure_probe",
+                "detail": str(peer.get("name") or peer.get("role") or "secure"),
+                "name": str(peer.get("name", "")),
+                "platform": str(peer.get("platform", "")),
+                "version": str(peer.get("version", "")),
+                "latency_ms": int((time.monotonic() - started) * 1000),
+                "seen": time.time(),
+            }
+        )
+        try:
+            link.send(frame("health_probe"))
+            link.send(frame("release"))
+        except Exception:
+            pass
+    except Exception as exc:
+        result["detail"] = str(exc)
+        result["latency_ms"] = int((time.monotonic() - started) * 1000)
+        result["seen"] = time.time()
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except OSError:
+                pass
+    return result
 
 
 def next_free_position(clients: list[dict]) -> tuple[int, int]:
@@ -694,6 +905,7 @@ class RemoteLink:
             if self.connected or self.connecting:
                 return
             self.connecting = True
+            self.client_info = {}
             self.connect_generation += 1
             generation = self.connect_generation
         thread = threading.Thread(target=self._connect_thread, args=(generation, host, port, token, identity), daemon=True)
@@ -723,10 +935,16 @@ class RemoteLink:
             for message in secure.read_frames():
                 self.events.put(("frame", message))
         except CryptoError as exc:
-            self.events.put(("log", f"Sicurezza handshake fallita: {exc}"))
-            self.events.put(("relay", ("security_error", "KyMoRem secure handshake failed", str(exc))))
+            with self.lock:
+                current_generation = generation == self.connect_generation
+            if current_generation:
+                self.events.put(("log", f"Sicurezza handshake fallita: {exc}"))
+                self.events.put(("relay", ("security_error", "KyMoRem secure handshake failed", str(exc))))
         except Exception as exc:
-            self.events.put(("log", f"Connessione fallita: {exc}"))
+            with self.lock:
+                current_generation = generation == self.connect_generation
+            if current_generation:
+                self.events.put(("log", f"Connessione fallita: {exc}"))
         finally:
             with self.lock:
                 current_generation = generation == self.connect_generation
@@ -752,6 +970,7 @@ class RemoteLink:
             self.secure = None
             self.connected = False
             self.connecting = False
+            self.client_info = {}
             self.endpoint = None
             self.connect_generation += 1
         if sock:
@@ -831,6 +1050,8 @@ class ControlEngine:
             "ts": 0.0,
         }
         self.cursor_hidden = False
+        self.last_mouse_point = self.anchor
+        self.suppress_mouse_move = False
         self.keyboard_hook = None
         self.mouse_hook = None
         self.hook_thread_id = 0
@@ -848,6 +1069,7 @@ class ControlEngine:
         self.pending_move_dy = 0
         self.pending_wheel_dx = 0
         self.pending_wheel_dy = 0
+        self.last_wheel_flush_ts = 0.0
         self.last_input_drop_log = 0.0
         now = time.monotonic()
         self.last_keepalive_sent = now
@@ -896,25 +1118,40 @@ class ControlEngine:
         setattr(self, attr, pending - delta)
         return delta
 
-    def _take_coalesced_inputs(self) -> tuple[int, int, int, int]:
+    def _clear_pending_inputs(self) -> None:
+        with self.coalesce_lock:
+            self.pending_move_dx = 0
+            self.pending_move_dy = 0
+            self.pending_wheel_dx = 0
+            self.pending_wheel_dy = 0
+        while True:
+            try:
+                self.input_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def _take_coalesced_inputs(self, *, include_wheel: bool = True) -> tuple[int, int, int, int]:
         with self.coalesce_lock:
             dx = self.pending_move_dx
             dy = self.pending_move_dy
             self.pending_move_dx = 0
             self.pending_move_dy = 0
-            wheel_dx = self._take_wheel_batch("pending_wheel_dx")
-            wheel_dy = self._take_wheel_batch("pending_wheel_dy")
+            wheel_dx = self._take_wheel_batch("pending_wheel_dx") if include_wheel else 0
+            wheel_dy = self._take_wheel_batch("pending_wheel_dy") if include_wheel else 0
         return dx, dy, wheel_dx, wheel_dy
 
     def _flush_coalesced_inputs(self) -> None:
         if not self.remote:
-            self._take_coalesced_inputs()
+            self._clear_pending_inputs()
             return
-        dx, dy, wheel_dx, wheel_dy = self._take_coalesced_inputs()
+        now = time.monotonic()
+        include_wheel = now - self.last_wheel_flush_ts >= WHEEL_FLUSH_INTERVAL
+        dx, dy, wheel_dx, wheel_dy = self._take_coalesced_inputs(include_wheel=include_wheel)
         if dx or dy:
             self.link.send("move", dx=dx, dy=dy)
         if wheel_dx or wheel_dy:
             self.link.send("wheel", dx=wheel_dx, dy=wheel_dy)
+            self.last_wheel_flush_ts = now
 
     def _input_sender_loop(self) -> None:
         next_flush = time.monotonic()
@@ -1000,8 +1237,23 @@ class ControlEngine:
     def _mouse_hook(self, n_code, w_param, l_param):
         if n_code >= 0 and self.remote:
             msg = int(w_param)
+            info = ctypes.cast(l_param, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
             if msg == WM_MOUSEMOVE:
-                return user32.CallNextHookEx(self.mouse_hook, n_code, w_param, l_param)
+                x, y = int(info.pt.x), int(info.pt.y)
+                if self.suppress_mouse_move or int(info.flags) & LLMHF_INJECTED:
+                    self.suppress_mouse_move = False
+                    self.last_mouse_point = self.anchor
+                    return 1
+                last_x, last_y = self.last_mouse_point
+                dx = x - int(last_x)
+                dy = y - int(last_y)
+                if dx or dy:
+                    self._queue_remote("move", dx=dx, dy=dy)
+                self.last_mouse_point = self.anchor
+                if (x, y) != self.anchor:
+                    self.suppress_mouse_move = True
+                    set_cursor(*self.anchor)
+                return 1
             if msg in MOUSE_BUTTON_MESSAGES:
                 button, state = MOUSE_BUTTON_MESSAGES[msg]
                 down = state == "down"
@@ -1010,7 +1262,6 @@ class ControlEngine:
                     self._queue_remote("button", button=button, state=state)
                 return 1
             if msg in {WM_MOUSEWHEEL, WM_MOUSEHWHEEL}:
-                info = ctypes.cast(l_param, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 delta = ctypes.c_short((int(info.mouseData) >> 16) & 0xFFFF).value
                 if delta and msg == WM_MOUSEHWHEEL:
                     self._queue_remote("wheel", dx=delta)
@@ -1053,9 +1304,26 @@ class ControlEngine:
         )
 
     def stop(self) -> None:
+        self._show_host_cursor()
         self.running = False
         if self.hook_thread_id:
             user32.PostThreadMessageW(self.hook_thread_id, WM_QUIT, 0, 0)
+
+    def _hide_host_cursor(self) -> None:
+        if self.cursor_hidden:
+            return
+        for _ in range(16):
+            if user32.ShowCursor(False) < 0:
+                break
+        self.cursor_hidden = True
+
+    def _show_host_cursor(self) -> None:
+        if not self.cursor_hidden:
+            return
+        for _ in range(16):
+            if user32.ShowCursor(True) >= 0:
+                break
+        self.cursor_hidden = False
 
     def _capture_edge_exit(self, direction: str, x: int, y: int) -> dict:
         self.left, self.top, self.w, self.h = screen_rect()
@@ -1091,7 +1359,6 @@ class ControlEngine:
         x_ratio = float(context.get("x_ratio", 0.5))
         y_ratio = float(context.get("y_ratio", 0.5))
         self.active_direction = direction
-        self.remote = True
         now = time.monotonic()
         self.last_keepalive_ack = now
         self.last_keepalive_sent = now
@@ -1104,6 +1371,12 @@ class ControlEngine:
             x_ratio=x_ratio,
             y_ratio=y_ratio,
         )
+        self._clear_pending_inputs()
+        self.last_wheel_flush_ts = 0.0
+        self._hide_host_cursor()
+        self.last_mouse_point = self.anchor
+        self.suppress_mouse_move = True
+        self.remote = True
         set_cursor(*self.anchor)
         self.events.put(("remote", True))
         self.events.put(
@@ -1115,24 +1388,27 @@ class ControlEngine:
             )
         )
 
-    def release(self) -> None:
+    def release(self, *, notify_client: bool = True, restore_cursor: bool = True) -> None:
         if self.remote:
             self.remote = False
             now = time.monotonic()
             self.last_keepalive_ack = now
             self.last_keepalive_sent = now
-            self._take_coalesced_inputs()
+            self._clear_pending_inputs()
             self._release_remote_inputs()
             self.last_edge_ts = time.monotonic()
-            if self.active_direction == "left":
-                set_cursor(self.left + RELEASE_EDGE_MARGIN, self.top + self.h // 2)
-            elif self.active_direction == "up":
-                set_cursor(self.left + self.w // 2, self.top + RELEASE_EDGE_MARGIN)
-            elif self.active_direction == "down":
-                set_cursor(self.left + self.w // 2, self.top + max(0, self.h - RELEASE_EDGE_MARGIN))
-            else:
-                set_cursor(self.left + max(0, self.w - RELEASE_EDGE_MARGIN), self.top + self.h // 2)
-            self.link.send("release")
+            if restore_cursor:
+                if self.active_direction == "left":
+                    set_cursor(self.left + RELEASE_EDGE_MARGIN, self.top + self.h // 2)
+                elif self.active_direction == "up":
+                    set_cursor(self.left + self.w // 2, self.top + RELEASE_EDGE_MARGIN)
+                elif self.active_direction == "down":
+                    set_cursor(self.left + self.w // 2, self.top + max(0, self.h - RELEASE_EDGE_MARGIN))
+                else:
+                    set_cursor(self.left + max(0, self.w - RELEASE_EDGE_MARGIN), self.top + self.h // 2)
+                self._show_host_cursor()
+            if notify_client:
+                self.link.send("release")
             self.events.put(("remote", False))
             self.events.put(("log", "Controllo remoto rilasciato."))
 
@@ -1159,42 +1435,51 @@ class ControlEngine:
 
     def loop(self) -> None:
         while self.running:
-            time.sleep(0.012)
-            if not self.enabled:
-                continue
-            if not self.remote:
-                x, y = get_cursor()
-                if self.edge_guard and self.edge_guard(x, y):
-                    continue
-                direction = self._host_edge(x, y)
-                if direction and time.monotonic() - self.last_edge_ts > MIN_EDGE_INTERVAL:
-                    self.last_edge_ts = time.monotonic()
-                    entry = self._capture_edge_exit(direction, x, y)
-                    if self.router and self.router(direction, entry):
-                        self.take(direction, entry)
-                continue
-
-            if async_down(VK["VK_CONTROL"]) and async_down(VK["VK_ESCAPE"]):
-                self.release()
+            try:
+                self._loop_once()
+            except Exception as exc:
+                self.events.put(("log", f"Control engine error: {exc}"))
                 time.sleep(0.2)
-                continue
 
-            now = time.monotonic()
-            if now - self.last_keepalive_sent >= KEEPALIVE_INTERVAL:
-                self.link.send("keepalive", direction=self.active_direction)
-                self.last_keepalive_sent = now
-            if now - self.last_keepalive_ack >= KEEPALIVE_TIMEOUT:
-                self.events.put(("log", "Sessione remota inattiva troppo a lungo: rinnovo il link."))
-                self.link.disconnect()
-                time.sleep(0.2)
-                continue
-
+    def _loop_once(self) -> None:
+        time.sleep(0.012)
+        if not self.enabled:
+            if self.remote:
+                self.release(notify_client=False)
+            return
+        if not self.remote:
             x, y = get_cursor()
-            dx = x - self.anchor[0]
-            dy = y - self.anchor[1]
-            if dx or dy:
-                self._queue_remote("move", dx=dx, dy=dy)
-                set_cursor(*self.anchor)
+            direction = self._host_edge(x, y)
+            if self.edge_guard and self.edge_guard(x, y) and not direction:
+                return
+            if direction and time.monotonic() - self.last_edge_ts > MIN_EDGE_INTERVAL:
+                self.last_edge_ts = time.monotonic()
+                entry = self._capture_edge_exit(direction, x, y)
+                if self.router and self.router(direction, entry):
+                    self.take(direction, entry)
+            return
+
+        if not getattr(self.link, "connected", False):
+            self.events.put(("log", "Link remoto non piu' attivo: rilascio controllo locale."))
+            self.release(notify_client=False)
+            time.sleep(0.2)
+            return
+
+        if async_down(VK["VK_CONTROL"]) and async_down(VK["VK_ESCAPE"]):
+            self.release()
+            time.sleep(0.2)
+            return
+
+        now = time.monotonic()
+        if now - self.last_keepalive_sent >= KEEPALIVE_INTERVAL:
+            self.link.send("keepalive", direction=self.active_direction)
+            self.last_keepalive_sent = now
+        if now - self.last_keepalive_ack >= KEEPALIVE_TIMEOUT:
+            self.events.put(("log", "Sessione remota inattiva troppo a lungo: rilascio locale e rinnovo link."))
+            self.release(notify_client=False)
+            self.link.disconnect()
+            time.sleep(0.2)
+            return
 
 
 class KyMoRemApp:
@@ -1215,6 +1500,9 @@ class KyMoRemApp:
         self.pointer_hint: dict | None = None
         self.pointer_hint_until = 0.0
         self.next_prune_ts = 0.0
+        self.next_health_probe_ts = 0.0
+        self.health_probe_running = False
+        self.client_health: dict[str, dict] = {}
         self.last_client_edge_log: dict[str, float] = {}
         self.log_history: list[str] = []
         self.control_center = None
@@ -1228,11 +1516,11 @@ class KyMoRemApp:
         self.pending_take_endpoint: tuple[str, int] | None = None
         self.pending_take_deadline = 0.0
         self.pending_take_requires_edge = False
-        self.engine = ControlEngine(self.link, self.events, self._route_from_edge, self._pointer_inside_ui, enabled=self.server_active)
         self.discovery_beacon = None
         self.discovery_listener = None
         self.tray_icon = None
         self.root = tk.Tk()
+        self.engine = ControlEngine(self.link, self.events, self._route_from_edge, self._pointer_inside_ui, enabled=self.server_active)
         self.root.title(f"{APP_NAME} {VERSION} // {APP_SHORT_MARK} Neon Route Console")
         self.root.geometry(self._startup_geometry())
         min_w, min_h = self._surface_minsize()
@@ -1388,6 +1676,7 @@ class KyMoRemApp:
 
         header_actions = tk.Frame(header, bg=CYBER["bg"])
         header_actions.pack(side="right", anchor="n")
+        self._mini_button(header_actions, self.text["refresh"].upper(), self._refresh_now, CYBER["yellow"]).pack(side="left", padx=(0, 8))
         self._mini_button(header_actions, "CONTROL CENTER", self._open_control_center, CYBER["cyan"]).pack(side="left", padx=(8, 0))
 
         summary = tk.Frame(self.root, bg=CYBER["bg"])
@@ -1506,6 +1795,7 @@ class KyMoRemApp:
         self._neon_button(controls, self.text["take"], self._take_selected, CYBER["acid"]).pack(side="left", padx=8)
         self._neon_button(controls, self.text["release"], self.engine.release, CYBER["yellow"]).pack(side="left", padx=8)
         self._neon_button(controls, self.text["disconnect"], self.link.disconnect, CYBER["pink"]).pack(side="left", padx=8)
+        self._neon_button(controls, self.text["refresh"], self._refresh_now, CYBER["yellow"]).pack(side="left", padx=8)
         self._neon_button(controls, "CONTROL CENTER", self._open_control_center, CYBER["cyan"]).pack(side="left", padx=8)
 
         tk.Label(
@@ -1592,6 +1882,7 @@ class KyMoRemApp:
         existing = getattr(self, "control_center", None)
         if existing and existing.winfo_exists():
             existing.deiconify()
+            existing.geometry(self._control_center_geometry())
             existing.lift()
             existing.focus_force()
             return
@@ -1599,7 +1890,7 @@ class KyMoRemApp:
         self.control_center = tk.Toplevel(self.root)
         self.control_center.title(f"{APP_NAME} // Control Center")
         self.control_center.configure(bg=CYBER["bg"])
-        self.control_center.geometry("430x860+60+60")
+        self.control_center.geometry(self._control_center_geometry())
         self.control_center.minsize(390, 520)
         try:
             self.control_center.attributes("-alpha", self._ui_opacity())
@@ -1785,8 +2076,47 @@ class KyMoRemApp:
         self.log.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         if self.log_history:
             self.log.insert("end", "\n".join(self.log_history[-400:]) + "\n")
-            self.log.see("end")
+        self.log.see("end")
         self._refresh_client_list()
+
+    def _control_center_geometry(self) -> str:
+        width = 430
+        height = 860
+        try:
+            self.root.update_idletasks()
+            screen_x = int(self.root.winfo_vrootx())
+            screen_y = int(self.root.winfo_vrooty())
+            screen_w = int(self.root.winfo_vrootwidth())
+            screen_h = int(self.root.winfo_vrootheight())
+        except tk.TclError:
+            screen_x = 0
+            screen_y = 0
+            screen_w = 1024
+            screen_h = 768
+        height = min(height, max(520, screen_h - 48))
+        width = min(width, max(390, screen_w - 48))
+        try:
+            parent_x = int(self.root.winfo_rootx())
+            parent_y = int(self.root.winfo_rooty())
+            parent_w = max(1, int(self.root.winfo_width()))
+            parent_h = max(1, int(self.root.winfo_height()))
+        except tk.TclError:
+            parent_x = screen_x
+            parent_y = screen_y
+            parent_w = screen_w
+            parent_h = screen_h
+        return centered_child_geometry(
+            parent_x,
+            parent_y,
+            parent_w,
+            parent_h,
+            width,
+            height,
+            screen_x,
+            screen_y,
+            screen_w,
+            screen_h,
+        )
 
     def _close_control_center(self) -> None:
         window = getattr(self, "control_center", None)
@@ -1828,6 +2158,8 @@ class KyMoRemApp:
         lookup: dict[str, str] = {}
         selected_label = ""
         for client in self.config.get("clients", []):
+            if not is_selectable_client(client):
+                continue
             label = f"{client.get('name')} // {client.get('host')}:{client.get('port')}"
             key = client_key(client)
             values.append(label)
@@ -1860,17 +2192,80 @@ class KyMoRemApp:
         if not clients:
             clients.append(normalize_client(DEFAULT_CONFIG["clients"][0]))
         for client in clients:
-            if client_key(client) == self.selected_client:
+            if client_key(client) == self.selected_client and is_selectable_client(client):
                 return client
-        self.selected_client = client_key(clients[0])
-        return clients[0]
+        selectable = next((client for client in clients if is_selectable_client(client)), clients[0])
+        self.selected_client = client_key(selectable)
+        return selectable
 
     def _client_by_key(self, key: str) -> dict | None:
         return next((client for client in self.config.get("clients", []) if client_key(client) == key), None)
 
+    def _active_client_config(self) -> dict | None:
+        endpoint = getattr(self.link, "endpoint", None)
+        if endpoint:
+            host, port = endpoint
+            key = f"{host}:{int(port)}"
+            found = self._client_by_key(key)
+            if found:
+                return found
+        return self._client_by_key(self.selected_client)
+
+    def _next_client_from_edge(self, current: dict, edge: str) -> dict | None:
+        cx, cy = client_grid(current)
+        current_key = client_key(current)
+        candidates: list[tuple[int, dict]] = []
+        for client in self.config.get("clients", []):
+            if client_key(client) == current_key or not is_selectable_client(client):
+                continue
+            x, y = client_grid(client)
+            distance = 0
+            if edge == "right" and y == cy and x > cx:
+                distance = x - cx
+            elif edge == "left" and y == cy and x < cx:
+                distance = cx - x
+            elif edge == "down" and x == cx and y > cy:
+                distance = y - cy
+            elif edge == "up" and x == cx and y < cy:
+                distance = cy - y
+            if distance:
+                candidates.append((distance, client))
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda item: item[0])[0][1]
+
+    def _edge_points_toward_server(self, current: dict, edge: str) -> bool:
+        x, y = client_grid(current)
+        dx, dy = EDGE_DELTAS.get(edge, (0, 0))
+        return abs(x + dx) + abs(y + dy) < abs(x) + abs(y)
+
+    def _resolve_pending_client_endpoint(self, client: dict) -> bool:
+        if not is_pending_client_host(str(client.get("host", ""))):
+            return True
+        name = str(client.get("name", "")).strip().lower()
+        port = int(client.get("port", PORT))
+        for key, item in self.discovered_clients.items():
+            if not self._discovered_alive(key):
+                continue
+            if str(item.get("name", "")).strip().lower() == name and int(item.get("port", PORT)) == port:
+                client["host"] = str(item.get("host", ""))
+                client["port"] = port
+                self._save_config()
+                self._log(f"Client approvato risolto da discovery: {client.get('name')} {client.get('host')}:{port}")
+                return True
+        return False
+
     def _save_config(self) -> None:
-        self.config["clients"] = [normalize_client(item, index) for index, item in enumerate(self.config.get("clients", []))]
+        self.config["clients"] = normalize_layout_clients(list(self.config.get("clients", [])))
         (app_dir() / "config.json").write_text(json.dumps(self.config, indent=2), encoding="utf-8")
+
+    def _apply_server_layout(self) -> None:
+        self.config["clients"] = normalize_layout_clients(list(self.config.get("clients", [])))
+        selected = self._client_by_key(self.selected_client)
+        if not selected or not is_selectable_client(selected):
+            self.selected_client = ""
+            self._client_config()
+        self._save_config()
 
     def _discovered_alive(self, key: str) -> bool:
         seen = float(self.discovered_clients.get(key, {}).get("seen", 0.0) or 0.0)
@@ -1879,6 +2274,98 @@ class KyMoRemApp:
     def _active_discovery_count(self) -> int:
         now = time.time()
         return sum(1 for item in self.discovered_clients.values() if now - float(item.get("seen", 0.0) or 0.0) <= DISCOVERY_CLIENT_TTL)
+
+    def _apply_client_health(self, payload: dict) -> None:
+        key = str(payload.get("key", ""))
+        if not key:
+            key = f"{payload.get('host', '')}:{int(payload.get('port', PORT))}"
+        payload = dict(payload)
+        payload["key"] = key
+        payload["seen"] = float(payload.get("seen", time.time()) or time.time())
+        existing = getattr(self, "client_health", {}).get(key, {})
+        existing_age = time.time() - float(existing.get("seen", 0.0) or 0.0)
+        if (
+            payload.get("state") == "offline"
+            and existing.get("state") in {"online", "connected"}
+            and existing_age <= CLIENT_HEALTH_OFFLINE_GRACE
+        ):
+            existing = dict(existing)
+            existing["last_error"] = payload.get("detail", "")
+            existing["last_probe_failed"] = payload["seen"]
+            self.client_health[key] = existing
+        else:
+            self.client_health[key] = payload
+        self._update_discovery_badge()
+        self._refresh_client_list()
+        self._draw_layout()
+
+    def _mark_endpoint_health(self, endpoint: tuple[str, int] | None, state: str, source: str, detail: str = "", extra: dict | None = None) -> None:
+        key = endpoint_key(endpoint)
+        if not key:
+            return
+        if not hasattr(self, "client_health"):
+            self.client_health = {}
+        host, port = endpoint
+        payload = {
+            "key": key,
+            "host": host,
+            "port": int(port),
+            "state": state,
+            "source": source,
+            "detail": detail,
+            "seen": time.time(),
+        }
+        if extra:
+            payload.update(extra)
+        self.client_health[key] = payload
+
+    def _client_runtime_view(self, client: dict) -> dict:
+        key = client_key(client)
+        source = str(client.get("source", "manual")).lower()
+        if source == "discovery_pending" or not bool(client.get("enabled", True)):
+            return {"state": "pending", "label": "PENDING", "color": CYBER["yellow"], "online": False, "connected": False}
+        if is_pending_client_host(str(client.get("host", ""))):
+            return {"state": "pending", "label": "PENDING IP", "color": CYBER["yellow"], "online": False, "connected": False}
+        endpoint = client_endpoint(client)
+        link = getattr(self, "link", None)
+        if getattr(link, "connected", False) and getattr(link, "endpoint", None) == endpoint:
+            return {"state": "connected", "label": self.text.get("connected_node", self.text["status_connected"]).upper(), "color": CYBER["acid"], "online": True, "connected": True}
+        now = time.time()
+        health = getattr(self, "client_health", {}).get(key, {})
+        health_age = now - float(health.get("seen", 0.0) or 0.0)
+        if health and health_age <= CLIENT_HEALTH_TTL:
+            if health.get("state") in {"connected", "online"}:
+                return {"state": "online", "label": self.text["online"].upper(), "color": CYBER["acid"], "online": True, "connected": False}
+            if health.get("state") == "offline":
+                return {"state": "offline", "label": self.text.get("offline", "Offline").upper(), "color": CYBER["red"], "online": False, "connected": False}
+        if self._discovered_alive(key):
+            return {"state": "online", "label": self.text["online"].upper(), "color": CYBER["acid"], "online": True, "connected": False}
+        return {"state": "standby", "label": self.text["standby"].upper(), "color": CYBER["muted"], "online": False, "connected": False}
+
+    def _client_health_summary(self) -> tuple[int, int, int]:
+        selectable = [client for client in self.config.get("clients", []) if is_selectable_client(client) and not is_pending_client_host(str(client.get("host", "")))]
+        online = sum(1 for client in selectable if self._client_runtime_view(client).get("online"))
+        pending = sum(1 for client in self.config.get("clients", []) if not is_selectable_client(client) or is_pending_client_host(str(client.get("host", ""))))
+        return online, len(selectable), pending
+
+    def _set_client_inventory_badge(self, online: int, total: int, pending: int) -> None:
+        badge = getattr(self, "discovery_badge", None)
+        if not badge:
+            return
+        try:
+            if not badge.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        discovery = self._active_discovery_count()
+        text = f"CLIENTI // {int(online)}/{int(total)} ONLINE // UDP {discovery}"
+        if pending:
+            text += f" // {int(pending)} PENDING"
+        badge.configure(text=text)
+        if getattr(self, "last_inventory_badge_text", "") != text:
+            self.last_inventory_badge_text = text
+            if hasattr(self, "_log") and hasattr(self, "log_history"):
+                self._log(f"Health inventory: {text}")
 
     def _update_discovery_badge(self) -> None:
         badge = getattr(self, "discovery_badge", None)
@@ -1892,7 +2379,66 @@ class KyMoRemApp:
         if not self.server_active:
             badge.configure(text=self.text["discovery_off"].upper())
             return
-        badge.configure(text=f"DISCOVERY // {self._active_discovery_count()} CLIENT ONLINE")
+        if not self._discovery_enabled():
+            badge.configure(text=self.text["discovery_disabled"].upper())
+            return
+        online, total, pending = self._client_health_summary()
+        self._set_client_inventory_badge(online, total, pending)
+
+    def _start_health_probe(self, *, force: bool = False) -> None:
+        if not hasattr(self, "client_health"):
+            self.client_health = {}
+        if not self.server_active or getattr(self, "health_probe_running", False):
+            return
+        if getattr(getattr(self, "engine", None), "remote", False) and not force:
+            return
+        link = getattr(self, "link", None)
+        if getattr(link, "connecting", False) and not force:
+            return
+        try:
+            validate_token(self._token())
+        except CryptoError:
+            return
+        clients = [
+            dict(client)
+            for client in self.config.get("clients", [])
+            if is_selectable_client(client) and not is_pending_client_host(str(client.get("host", "")))
+        ]
+        if not clients:
+            self._update_discovery_badge()
+            return
+        self.health_probe_running = True
+        token = self._token()
+        active_endpoint = getattr(link, "endpoint", None) if getattr(link, "connected", False) else None
+        thread = threading.Thread(target=self._health_probe_thread, args=(clients, token, active_endpoint), daemon=True)
+        thread.start()
+
+    def _health_probe_thread(self, clients: list[dict], token: str, active_endpoint: tuple[str, int] | None) -> None:
+        try:
+            for client in clients:
+                endpoint = client_endpoint(client)
+                key = client_key(client)
+                if endpoint == active_endpoint:
+                    self.events.put(
+                        (
+                            "health",
+                            {
+                                "key": key,
+                                "host": endpoint[0],
+                                "port": endpoint[1],
+                                "state": "connected",
+                                "source": "link",
+                                "detail": str(client.get("name", "")),
+                                "seen": time.time(),
+                            },
+                        )
+                    )
+                    continue
+                result = probe_secure_client(endpoint[0], endpoint[1], token)
+                self.events.put(("health", result))
+                time.sleep(0.05)
+        finally:
+            self.events.put(("health_probe_done", None))
 
     def _prune_transient_clients(self, startup: bool = False) -> bool:
         now = time.time()
@@ -1903,7 +2449,7 @@ class KyMoRemApp:
             endpoint = (str(client.get("host", "")), int(client.get("port", PORT)))
             last_seen = float(client.get("last_seen", 0.0) or 0.0)
             remove = is_test_client(client)
-            if source == "discovery":
+            if source.startswith("discovery"):
                 stale_saved = not last_seen or now - last_seen > DISCOVERY_CONFIG_TTL
                 alive = self._discovered_alive(client_key(client))
                 active_endpoint = getattr(getattr(self, "link", None), "endpoint", None)
@@ -2045,7 +2591,7 @@ class KyMoRemApp:
         return addr
 
     def _pointer_inside_ui(self, x: int, y: int) -> bool:
-        for window in (self.root, getattr(self, "control_center", None)):
+        for window in (getattr(self, "root", None), getattr(self, "control_center", None)):
             if not window:
                 continue
             try:
@@ -2115,23 +2661,50 @@ class KyMoRemApp:
         now = time.time()
         key = f"{host}:{port}"
         self.discovered_clients[key] = {"host": host, "port": port, "name": name, "seen": now}
+        self._mark_endpoint_health((host, port), "online", "discovery", name, {"name": name})
         self._update_discovery_badge()
         clients = self.config.setdefault("clients", [])
         existing = next((client for client in clients if client_key(client) == key), None)
+        claimed_pending = False
+        if not existing:
+            existing = pending_client_by_name(clients, name, port)
+            claimed_pending = bool(existing)
         if existing:
             existing["name"] = name
+            existing["host"] = host
+            existing["port"] = port
             existing["last_seen"] = now
             existing["source"] = existing.get("source", "discovery")
+            if claimed_pending:
+                self._log(f"Client approvato rilevato: {name} {host}:{port}")
         elif len(clients) < MAX_CLIENTS:
             gx, gy = next_free_position(clients)
-            clients.append(normalize_client({"name": name, "host": host, "port": port, "x": gx, "y": gy, "source": "discovery", "last_seen": now}))
-            self._log(f"Client scoperto: {name} {host}:{port}")
+            auto_approve = bool(self.config.get("discovery", {}).get("auto_approve", False))
+            source = "discovery" if auto_approve else "discovery_pending"
+            clients.append(
+                normalize_client(
+                    {
+                        "name": name,
+                        "host": host,
+                        "port": port,
+                        "x": gx,
+                        "y": gy,
+                        "source": source,
+                        "enabled": auto_approve,
+                        "last_seen": now,
+                    }
+                )
+            )
+            if auto_approve:
+                self._log(f"Client scoperto: {name} {host}:{port}")
+            else:
+                self._log(f"Client in attesa di approvazione: {name} {host}:{port}")
         self._save_config()
         self._refresh_client_list()
         self._draw_layout()
         if self._discovery_auto_connect() and not self.link.connected and not self.link.connecting:
             target = self._client_by_key(key)
-            if target:
+            if target and target.get("enabled", True):
                 self.selected_client = client_key(target)
                 self._connect()
 
@@ -2218,15 +2791,7 @@ class KyMoRemApp:
         for index, client in enumerate(self.config.get("clients", [])):
             key = client_key(client)
             marker = "*" if key == self.selected_client else " "
-            endpoint = (str(client.get("host")), int(client.get("port", PORT)))
-            if self.link.connected and self.link.endpoint == endpoint:
-                state = self.text["online"]
-            elif self._discovered_alive(key):
-                state = "Discovery"
-            elif str(client.get("source", "manual")).lower() == "manual":
-                state = "Manuale" if self.lang == "it" else "Manual"
-            else:
-                state = self.text["standby"]
+            state = self._client_runtime_view(client)["label"]
             self.client_list.insert(
                 "end",
                 f"{marker} {client.get('name')}  {client.get('host')}:{client.get('port')}  [{client.get('x')},{client.get('y')}]  {state}",
@@ -2259,6 +2824,47 @@ class KyMoRemApp:
         self._update_discovery_badge()
         self._draw_layout()
         self._log(f"Pulizia discovery/offline: rimossi {max(0, before - len(self.config['clients']))} client.")
+
+    def _refresh_now(self) -> None:
+        current_key = self.selected_client
+        try:
+            self._apply_server_layout()
+        except Exception as exc:
+            self._log(f"Salvataggio layout fallito: {exc}")
+            return
+        try:
+            self.config = load_config()
+        except Exception as exc:
+            self._log(f"Aggiornamento fallito: {exc}")
+            return
+        self.lang = self.config.get("language", "it") if self.config.get("language") in TEXT else "it"
+        self.text = TEXT.get(self.lang, TEXT["it"])
+        self.theme_id = self.config.get("theme", self.theme_id)
+        CYBER.update(THEMES.get(self.theme_id, THEMES["old_school_x11"]))
+        self.server_active = bool(self.config.get("server_on") and self.config.get("mode") == "server")
+        self.engine.enabled = self.server_active
+        if self.server_active:
+            self._start_discovery()
+        else:
+            self._stop_discovery()
+        selected = self._client_by_key(current_key)
+        if selected and is_selectable_client(selected):
+            self.selected_client = current_key
+        else:
+            self.selected_client = ""
+            self._client_config()
+        self._prune_transient_clients()
+        self._refresh_server_toggle()
+        self._refresh_client_list()
+        self._update_discovery_badge()
+        self._draw_layout()
+        self.next_health_probe_ts = time.time() + CLIENT_HEALTH_PROBE_INTERVAL
+        self._start_health_probe(force=True)
+        if self.link.connected:
+            self._set_status(self.text["status_connected"], "#39e58c")
+        else:
+            self._set_status(self.text["boot_ready"].upper(), CYBER["acid"])
+        self._log("Aggiornato.")
 
     def _load_client_form(self, client: dict) -> None:
         if not all(hasattr(self, name) for name in ("client_name_var", "client_host_var", "client_port_var", "client_position_var")):
@@ -2307,6 +2913,7 @@ class KyMoRemApp:
             return
         clients = self.config.setdefault("clients", [])
         existing = next((item for item in clients if client_key(item) == client_key(client)), None)
+        client = reserve_client_position(client, clients, client_key(existing) if existing else "")
         if existing:
             existing.update(client)
         else:
@@ -2322,6 +2929,7 @@ class KyMoRemApp:
         form = self._manual_form_client(selected)
         if not form:
             return
+        form = reserve_client_position(form, self.config.get("clients", []), client_key(selected))
         selected.update(form)
         self.selected_client = client_key(selected)
         self._save_config()
@@ -2489,6 +3097,17 @@ class KyMoRemApp:
                 return None
         return direction, entry
 
+    def _connect_endpoint(self, endpoint: tuple[str, int], *, reason: str = "") -> None:
+        current = getattr(self.link, "endpoint", None)
+        if getattr(self.link, "connected", False) and current == endpoint:
+            return
+        if getattr(self.link, "connected", False):
+            if reason:
+                self._log(f"Cambio link remoto: {reason}.")
+            self.link.disconnect()
+        if not getattr(self.link, "connecting", False):
+            self.link.connect(endpoint[0], endpoint[1], self._token(), self._identity())
+
     def _take_selected(self) -> None:
         client = self._client_config()
         direction = self._client_edges(client)[0]
@@ -2497,23 +3116,58 @@ class KyMoRemApp:
             self._log("Server OFF: attiva SERVER ON prima di prendere controllo.")
             self._refresh_server_toggle()
             return
+        if not is_selectable_client(client):
+            self._log(f"Client {client.get('name')} non approvato o disabilitato.")
+            return
+        if is_pending_client_host(str(client.get("host", ""))):
+            self._log(f"Client {client.get('name')} approvato ma IP ancora pending.")
+            return
         if self.link.connected and self.link.endpoint == endpoint:
             self.engine.take(direction)
             return
         self._set_pending_take(client, direction, None, requires_edge=False)
-        if not self.link.connecting:
-            self.link.connect(endpoint[0], endpoint[1], self._token(), self._identity())
+        self._connect_endpoint(endpoint, reason=f"take {client.get('name')}")
+
+    def _switch_remote_client(self, current: dict, target: dict, edge: str, payload: dict) -> bool:
+        if not self._resolve_pending_client_endpoint(target):
+            self._log(f"Client {target.get('name')} approvato ma IP ancora non risolto.")
+            return False
+        endpoint = (str(target.get("host")), int(target.get("port", PORT)))
+        if is_pending_client_host(endpoint[0]):
+            self._log(f"Client {target.get('name')} non raggiungibile: host ancora pending.")
+            return False
+        entry = edge_entry_from_client_payload(edge, payload, getattr(self.link, "client_info", {}))
+        self._log(
+            f"Routing remoto: {current.get('name')} bordo {edge} -> "
+            f"{target.get('name')} {endpoint[0]}:{endpoint[1]}."
+        )
+        self.engine.release(restore_cursor=False)
+        self.selected_client = client_key(target)
+        self._set_pending_take(target, edge, entry, requires_edge=False)
+        self._refresh_client_list()
+        self._draw_layout()
+        self._connect_endpoint(endpoint, reason=f"{current.get('name')} -> {target.get('name')}")
+        return True
+
+    def _handle_client_edge(self, edge: str, payload: dict) -> None:
+        if not edge:
+            return
+        current = self._active_client_config()
+        if not current:
+            self.engine.client_edge(edge)
+            return
+        target = self._next_client_from_edge(current, edge)
+        if target:
+            self._switch_remote_client(current, target, edge, payload)
+            return
+        if self._edge_points_toward_server(current, edge):
+            self._log(f"Rientro sul server da {current.get('name')} via bordo {edge}.")
+            self.engine.release()
+            return
+        self._log(f"Nessun client adiacente a {current.get('name')} sul bordo {edge}.")
 
     def _fallback_route_client(self, direction: str) -> dict | None:
-        enabled = [client for client in self.config.get("clients", []) if client.get("enabled", True)]
-        if len(enabled) != 1:
-            return None
-        target = enabled[0]
-        if direction not in self._client_edges(target):
-            self.events.put(
-                ("log", f"Nessun client assegnato al bordo {direction}: fallback su {target.get('name')}.")
-            )
-        return target
+        return None
 
     def _route_from_edge(self, direction: str, entry: dict | None = None) -> bool:
         if not self.server_active:
@@ -2522,7 +3176,7 @@ class KyMoRemApp:
         candidates = [
             client
             for client in self.config.get("clients", [])
-            if client.get("enabled", True) and direction in self._client_edges(client)
+            if is_selectable_client(client) and direction in self._client_edges(client)
         ]
         target = (
             sorted(candidates, key=lambda item: abs(int(item.get("x", 0))) + abs(int(item.get("y", 0))))[0]
@@ -2537,9 +3191,8 @@ class KyMoRemApp:
         endpoint = (str(target.get("host")), int(target.get("port", PORT)))
         if self.link.connected and self.link.endpoint == endpoint:
             return True
-        self._set_pending_take(target, direction, entry, requires_edge=True)
-        if not self.link.connecting:
-            self.link.connect(endpoint[0], endpoint[1], self._token(), self._identity())
+        self._set_pending_take(target, direction, entry, requires_edge=False)
+        self._connect_endpoint(endpoint, reason=f"bordo {direction} -> {target.get('name')}")
         return False
 
     def _change_theme(self, _event=None) -> None:
@@ -2831,12 +3484,24 @@ class KyMoRemApp:
         center_x, center_y, cell_w, cell_h, node_w, node_h = self._layout_metrics(w, h)
         server = (center_x - node_w // 2, center_y - node_h // 2, center_x + node_w // 2, center_y + node_h // 2)
         server_state = self.text["server_on"].upper() if self.server_active else self.text["client_mode"].upper()
-        self._node_card(server, "SERVER", server_state, CYBER["cyan"], active=self.server_active and not self.engine.remote)
+        server_pill = self.text.get("active", "Attivo").upper() if self.server_active else self.text.get("offline", "Offline").upper()
+        self._node_card(
+            server,
+            "SERVER",
+            server_state,
+            CYBER["cyan"],
+            active=self.server_active and not self.engine.remote,
+            state_label=server_pill,
+            state_color=CYBER["acid"] if self.server_active else CYBER["red"],
+        )
         self._portal(center_x, center_y, CYBER["cyan"])
 
         selected = self._client_config()
         selected_key = client_key(selected)
         link_color = CYBER["acid"] if self.link.connected else CYBER["line"]
+        layout_online = 0
+        layout_total = 0
+        layout_pending = 0
         for client in clients:
             gx = int(client.get("x", 1))
             gy = int(client.get("y", 0))
@@ -2845,18 +3510,33 @@ class KyMoRemApp:
             box = (cx - node_w // 2, cy - node_h // 2, cx + node_w // 2, cy + node_h // 2)
             key = client_key(client)
             self.client_boxes[key] = box
-            active = self.link.connected and self.link.endpoint == (str(client.get("host")), int(client.get("port", PORT)))
+            view = self._client_runtime_view(client)
+            if is_selectable_client(client) and not is_pending_client_host(str(client.get("host", ""))):
+                layout_total += 1
+                if view.get("online"):
+                    layout_online += 1
+            else:
+                layout_pending += 1
+            active = bool(view.get("connected"))
             color = CYBER["pink"] if key == selected_key else CYBER["cyan"]
             if active:
                 color = CYBER["acid"]
-            c.create_line(center_x, center_y, cx, cy, fill=CYBER["cyan_dim"] if active else CYBER["line"], width=2)
+            elif view.get("online"):
+                color = CYBER["acid"]
+            elif view.get("state") == "offline":
+                color = CYBER["red"]
+            c.create_line(center_x, center_y, cx, cy, fill=CYBER["cyan_dim"] if view.get("online") else CYBER["line"], width=2)
             self._node_card(
                 box,
                 str(client.get("name", "client")).upper()[:18],
                 f"{client.get('host')}:{client.get('port')} // {'/'.join(self._client_edges(client))}",
                 color,
-                active=active,
+                active=bool(view.get("online")),
+                state_label=str(view.get("label", self.text["standby"].upper())),
+                state_color=str(view.get("color", CYBER["muted"])),
             )
+        if self.server_active and self._discovery_enabled():
+            self._set_client_inventory_badge(layout_online, layout_total, layout_pending)
 
         if not self.server_active:
             route_text = self.text["client_mode_route"].upper()
@@ -2891,14 +3571,23 @@ class KyMoRemApp:
         x1, y1, x2, y2 = box
         self.canvas.create_rectangle(x1, y1, x2, y2, fill=fill, outline=outline, width=2)
 
-    def _node_card(self, box: tuple[int, int, int, int], title: str, subtitle: str, color: str, active: bool) -> None:
+    def _node_card(
+        self,
+        box: tuple[int, int, int, int],
+        title: str,
+        subtitle: str,
+        color: str,
+        active: bool,
+        state_label: str | None = None,
+        state_color: str | None = None,
+    ) -> None:
         x1, y1, x2, y2 = box
         c = self.canvas
         self._beveled_rect(box, color, CYBER["panel"])
         c.create_text(x1 + 16, y1 + 22, text=title, anchor="w", fill=color, font=("Consolas", 14, "bold"))
         c.create_text(x1 + 16, y1 + 50, text=subtitle[:32], anchor="w", fill=CYBER["text"], font=("Consolas", 9, "bold"))
-        state = self.text["online"].upper() if active else self.text["standby"].upper()
-        pill = CYBER["acid"] if active else CYBER["muted"]
+        state = state_label or (self.text["online"].upper() if active else self.text["standby"].upper())
+        pill = state_color or (CYBER["acid"] if active else CYBER["muted"])
         c.create_rectangle(x1 + 16, y2 - 38, x1 + 104, y2 - 14, fill=CYBER["panel2"], outline=pill, width=1)
         c.create_text(x1 + 60, y2 - 26, text=state, anchor="center", fill=pill, font=("Consolas", 9, "bold"))
         c.create_oval(x2 - 50, y2 - 48, x2 - 18, y2 - 16, outline=color, width=2)
@@ -2920,8 +3609,16 @@ class KyMoRemApp:
             return
         if not self._token_valid():
             return
-        self._configure_widget("client_badge", text=self._client_badge_text())
-        self.link.connect(self._client_host(), self._client_port(), self._token(), self._identity())
+        client = self._client_config()
+        if not is_selectable_client(client):
+            self._log(f"Client {client.get('name')} non approvato o disabilitato.")
+            return
+        if is_pending_client_host(str(client.get("host", ""))):
+            self._log(f"Client {client.get('name')} approvato ma IP ancora pending.")
+            return
+        self._configure_widget("client_badge", text=self._client_badge_text(client))
+        endpoint = (str(client.get("host")), int(client.get("port", PORT)))
+        self._connect_endpoint(endpoint, reason=f"selezione {client.get('name')}")
 
     def _auto_connect(self) -> None:
         if not self.server_active or self.auto_retry_started:
@@ -2974,6 +3671,10 @@ class KyMoRemApp:
             elif kind == "relay":
                 event, subject, body = payload
                 self._relay_event(event, subject, body)
+            elif kind == "health":
+                self._apply_client_health(payload)
+            elif kind == "health_probe_done":
+                self.health_probe_running = False
             elif kind == "remote":
                 self._set_status(self.text["remote"].upper() if payload else self.text["status_connected"])
                 self._draw_layout()
@@ -2987,6 +3688,9 @@ class KyMoRemApp:
                 self._clear_pending_take()
                 if self.engine.remote:
                     self.engine.release()
+                else:
+                    self.engine._show_host_cursor()
+                self._update_discovery_badge()
                 if self.server_active:
                     self._set_status(self.text["status_disconnected"], "#ff5c7a")
                 else:
@@ -2997,12 +3701,19 @@ class KyMoRemApp:
             self.next_prune_ts = now + 5.0
             self._prune_transient_clients()
             self._update_discovery_badge()
+            self._draw_layout()
+        if self.server_active and now >= self.next_health_probe_ts:
+            self.next_health_probe_ts = now + CLIENT_HEALTH_PROBE_INTERVAL
+            self._start_health_probe()
         self.root.after(80, self._tick)
 
     def _handle_frame(self, message: dict) -> None:
         kind = message.get("type")
         payload = message.get("payload", {})
         if kind == "hello":
+            self.link.client_info = dict(payload)
+            self._mark_endpoint_health(self.link.endpoint, "connected", "link", str(payload.get("name", "")), dict(payload))
+            self._update_discovery_badge()
             self._set_status(self.text["status_connected"], "#39e58c")
             self._log(f"Client: {payload.get('name')} {payload.get('width')}x{payload.get('height')}")
             pending = self._consume_pending_take()
@@ -3018,15 +3729,18 @@ class KyMoRemApp:
                 if now - last >= 0.35:
                     self.last_client_edge_log[edge] = now
                     self._log(f"Il client ha raggiunto il bordo {edge}: valuto ritorno/routing.")
-            self.engine.client_edge(edge)
+            self._handle_client_edge(edge, payload)
         elif kind == "pulse_ack":
             self._log("Pulse OK dal client.")
         elif kind == "keepalive_ack":
+            self.link.client_info.update(payload)
             self.engine.note_keepalive_ack()
         elif kind == "pointer_position":
+            self.link.client_info.update(payload)
             payload["scope"] = payload.get("name", "client")
             self._show_pointer_hint(payload)
         elif kind == "entered":
+            self.link.client_info.update(payload)
             self._log(
                 f"Pointer client attivo: edge={payload.get('edge')} "
                 f"x={payload.get('x')} y={payload.get('y')} screen={payload.get('screen')}"

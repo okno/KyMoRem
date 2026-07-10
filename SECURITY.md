@@ -7,14 +7,17 @@ high-trust endpoint.
 
 | Version | Supported |
 | --- | --- |
-| 0.2.0-rc1 | Active release-candidate support |
+| 0.2.0-rc2 | Active release-candidate support |
+| 0.2.0-rc1 | Superseded by rc2 |
 | 0.1.x | Best-effort technical seed support |
 
 ## Current Security Model
 
-KyMoRem v0.2.0-rc1 protects sessions with:
+KyMoRem v0.2.0-rc2 protects sessions with:
 
 - shared token required by discovery and TCP session establishment;
+- server-side approval for generated/known clients;
+- unknown discovery clients disabled unless explicit auto-approval is enabled;
 - encrypted UDP discovery payloads on `54866/udp`;
 - encrypted TCP input channel on `54865/tcp`;
 - AES-256-GCM authenticated encryption for frame confidentiality/integrity;

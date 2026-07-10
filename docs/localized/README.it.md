@@ -1,57 +1,85 @@
 # KyMoRem Avvio Rapido IT
 
-KyMoRem condivide tastiera e puntatore in LAN. Un host controlla gli input
-fisici; uno o piu client ricevono eventi cifrati e li iniettano nella sessione
-grafica locale.
+KyMoRem condivide tastiera, puntatore, scroll e appunti in LAN tra macchine
+approvate. Il server possiede mouse e tastiera fisici; i client ricevono eventi
+cifrati e li iniettano nella propria sessione grafica.
+
+## Novita rc2
+
+- Mappa routing con client spostabili e pulsante `AGGIORNA`.
+- Control Center centrato nella finestra KyMoRem.
+- Pacchetto Windows 7 x86/x64 con token automatico, firewall helper e
+  approvazione server.
+- Pacchetto Linux con token del server e servizio utente X11.
+- Routing multi-hop tra client, per esempio server -> linux-iMac -> windows7.
+- Protezione contro scroll infinito dei mouse gaming.
+- Client sconosciuti salvati come pending e disabilitati.
 
 ## Host Windows
 
-1. Installa `KyMoRem-0.2.0-rc1-windows-x64-setup.exe`.
-2. Apri `%APPDATA%\KyMoRem\config.json`.
-3. Sostituisci `token` con un valore lungo, casuale e condiviso.
-4. Avvia KyMoRem.
-5. Seleziona `Server`, attiva `SERVER ON` e posiziona i client nella mappa.
+1. Installa `KyMoRem-0.2.0-rc2-windows-x64-setup.exe`.
+2. Avvia KyMoRem e scegli `Server`.
+3. Attiva `SERVER ON`.
+4. Posiziona i client approvati sulla mappa.
+5. Premi `SALVA` e poi `AGGIORNA`.
+
+## Client Windows 7
+
+Genera il pacchetto dal server:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemWin7ClientPackage.ps1 -Arch x86 -Name windows7 -Direction down -Zip
+```
+
+Per mettere Windows 7 a destra di un client gia presente:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemWin7ClientPackage.ps1 -Arch x86 -Name windows7 -RelativeTo linux-iMac -Direction right -Zip
+```
+
+Copia il pacchetto su Windows 7, esegui
+`Install-Firewall-And-Start.cmd` come amministratore e lascia aperta la finestra
+client. Per avvii successivi usa `Start-KyMoRem-Win7-Client.cmd`.
 
 ## Client Linux X11
 
-```bash
-tar -xzf KyMoRem-0.2.0-rc1-linux-x64-standalone.tar.gz
-cd KyMoRem-linux-x64-standalone
-export KYMOREM_TOKEN="token-lungo-condiviso"
-./run-client.sh
-```
-
-Per installazione come demone utente:
-
-```bash
-./install-daemon.sh
-nano ~/.config/kymorem/kymorem.env
-systemctl --user restart kymorem-client.service
-```
-
-## Client Windows diretto
-
 ```powershell
-KyMoRem.exe --client --bind 0.0.0.0 --port 54865 --name windows-client
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemLinuxClientPackage.ps1 -Name linux-iMac -ClientHost 10.0.0.80 -Zip
+```
+
+Sul client Linux:
+
+```bash
+chmod +x *.sh
+./Install-KyMoRem-Linux-Client.sh
+systemctl --user status kymorem-client.service
 ```
 
 ## Uso
 
-Assegna ogni client a una posizione rispetto al server: `right`, `left`, `up`
-o `down`. Il bordo viene attivato solo se esiste un client configurato per quel
-lato. Il puntatore entra nel display di destinazione in posizione
-proporzionale: uscita al 75 percento dell'altezza del server significa ingresso
-al 75 percento dell'altezza del client.
+Assegna ogni client a coordinate relative al server. Un bordo si attiva solo se
+esiste un client su quel lato. Dopo ogni cambio layout usa:
+
+```text
+SALVA -> AGGIORNA -> Ctrl+Esc -> entra dal nuovo bordo
+```
 
 Per uscire dalla modalita remota usa `Ctrl+Esc` sull'host o il bordo di ritorno
 del client.
 
-## Test
+## Problemi frequenti
 
-```bash
-export KYMOREM_TOKEN="token-lungo-condiviso"
-./run-test.sh 127.0.0.1 54865
-```
+- Windows 7 non si muove: rigenera il pacchetto, esegui firewall helper come
+  amministratore, chiudi vecchi client e premi `AGGIORNA`.
+- Handshake rifiutato: token non allineato o client vecchio; rigenera il
+  pacchetto dal server.
+- `0 client` ma schede online: UDP discovery bloccata, TCP ancora attivo; usa
+  IP manuale o premi `AGGIORNA`.
+- Scroll infinito blocca tutto: aggiorna server e client a rc2, poi
+  `Ctrl+Esc`.
+- Linux online ma fermo: serve sessione X11 con `xdotool`.
+
+FAQ completa: [FAQ IT](FAQ.it.md).
 
 ## Porte
 
@@ -60,7 +88,4 @@ export KYMOREM_TOKEN="token-lungo-condiviso"
 54866/udp  discovery LAN cifrata
 ```
 
-## Sicurezza
-
-Usa KyMoRem solo su LAN fidate. Il token di sviluppo viene rifiutato per
-default. Non pubblicare `54865/tcp` o `54866/udp` su reti non controllate.
+Usa KyMoRem solo su LAN fidate e non condividere i file token.

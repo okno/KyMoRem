@@ -1,39 +1,52 @@
 # KyMoRem
 
+<p align="center">
+  <img src="assets/brand/kymorem-official-logo.png" alt="KyMoRem official KMR logo" width="180">
+</p>
+
 KyMoRem, Keyboard Mouse Remote, is a LAN-first keyboard and pointer sharing
 system for desktop machines and external devices. A host owns the physical
-keyboard and mouse; clients receive authenticated, encrypted input frames and
-inject them into their local graphical session.
+keyboard and mouse; approved clients receive authenticated, encrypted input
+frames and inject them into their local graphical session.
 
 KyMoRem follows the screen-edge workflow used by KVM tools such as Barrier, but
 it does not copy Barrier source code and does not implement the Barrier/Synergy
 wire protocol.
 
-![KyMoRem RC1 routing console](screenshot.png)
+![KyMoRem routing console](screenshot.png)
 
-## Release Candidate
+## Super Route Release
 
-`v0.2.0-rc1` is the first release candidate for the Python Windows-to-Linux
-runtime.
+`v0.2.0-rc2` is the Super Route release for the Python runtime. It focuses on
+the real multi-machine workflow: Windows host, Linux X11 clients and Windows 7
+clients positioned on a shared route map.
 
-RC1 focuses on the practical Windows host to Linux X11 client path:
+### New capabilities
 
-- Windows host UI with the `KMR` routing map, system tray and themed controls.
-- Linux X11 client with `xdotool` injection.
-- Configurable client placement on left, right, up and down edges.
-- Edge activation only when a client is configured for that side.
-- Proportional pointer entry on the destination display.
-- Remote mouse movement, buttons, wheel and keyboard modifiers.
-- Emergency release with `Ctrl+Esc`.
-- Clipboard text sharing and bounded file transfer.
-- Encrypted TCP session using AES-256-GCM.
-- Hybrid ML-KEM-768 plus PSK key establishment when the PQ provider is
-  available.
-- Token-protected UDP LAN discovery on `54866/udp`.
-- Linux standalone client package for tests and user-level daemon deployment.
-- Official localization slots: IT, EN, CH.
+- Windows host route console with draggable client layout, `AGGIORNA` refresh
+  action and centered Control Center window.
+- Server-side approval model for clients. Unknown discovery clients stay
+  pending and disabled; generated packages are pre-approved by the server.
+- Editable layout grid. Move a client from the server UI, save, refresh, and
+  routing follows the new coordinates on the next edge transition.
+- Multi-hop edge routing between clients. Example: server -> linux-iMac ->
+  windows7, or server -> windows7 below the host.
+- Windows 7 x86/x64 client packaging with automatic secure token generation,
+  sidecar token file, firewall helper, restart script and server registration.
+- Linux client packaging for `/opt/kymorem` or user-level X11 daemon
+  deployment.
+- Safe endpoint switching. The host disconnects the previous active endpoint
+  before taking control of another client, preventing stale Linux-to-Win7
+  routing locks.
+- Gamer-mouse scroll protection. Wheel bursts are coalesced, capped and cleared
+  on release/switch so high-resolution infinite scroll cannot flood clients.
+- Health inventory for configured clients, not only UDP discovery counters.
+- Secure transport with AES-256-GCM, PSK/HKDF and ML-KEM-768 hybrid key
+  establishment when the provider is available.
+- Clipboard text and bounded file transfer over the encrypted session.
+- Official IT, EN and CH quick-start documents plus a new official KMR logo.
 
-Scaffolded targets are kept in the repository for continued work:
+Scaffolded targets remain in the repository for continued work:
 
 - Rust protocol/core/agent workspace.
 - Android app shell.
@@ -43,65 +56,112 @@ Scaffolded targets are kept in the repository for continued work:
 
 ## Quick Start
 
-Windows host:
+### Windows host
 
-1. Install `KyMoRem-0.2.0-rc1-windows-x64-setup.exe`.
-2. Open `%APPDATA%\KyMoRem\config.json`.
-3. Set a long shared `token`. The development placeholder token is refused by
-   default.
-4. Start KyMoRem, switch to `Server`, enable `SERVER ON`, then place clients on
-   the routing map.
+1. Install `KyMoRem-0.2.0-rc2-windows-x64-setup.exe`.
+2. Start KyMoRem and switch to `Server`.
+3. Enable `SERVER ON`.
+4. Open the route map, place approved clients on `right`, `left`, `up` or
+   `down`, then save.
+5. Press `AGGIORNA` after changing layout or after a client package announces
+   itself.
 
-Linux client:
+KyMoRem refuses the development placeholder token by default. Use the package
+generators below so the server creates or reuses a strong shared token.
+
+### Windows 7 client package
+
+Generate the package on the server:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemWin7ClientPackage.ps1 -Arch x86 -Name windows7 -Direction down -Zip
+```
+
+Or extend an existing client:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemWin7ClientPackage.ps1 -Arch x86 -Name windows7 -RelativeTo linux-iMac -Direction right -Zip
+```
+
+Copy `artifacts\win7-client-packages\windows7` or
+`artifacts\win7-client-packages\windows7.zip` to Windows 7, then run
+`Install-Firewall-And-Start.cmd` as Administrator. Daily starts can use
+`Start-KyMoRem-Win7-Client.cmd`.
+
+The package writes `kymorem-token.txt`, registers the client as approved in the
+server config and can use `host=pending` until the first valid discovery packet
+fills the real LAN IP.
+
+### Linux X11 client package
+
+Generate a Linux package from the server token:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemLinuxClientPackage.ps1 -Name linux-iMac -ClientHost 10.0.0.80 -Zip
+```
+
+On Linux:
 
 ```bash
-tar -xzf KyMoRem-0.2.0-rc1-linux-x64-standalone.tar.gz
+chmod +x *.sh
+./Install-KyMoRem-Linux-Client.sh
+systemctl --user status kymorem-client.service
+```
+
+Manual standalone mode is still supported:
+
+```bash
+tar -xzf KyMoRem-0.2.0-rc2-linux-x64-standalone.tar.gz
 cd KyMoRem-linux-x64-standalone
 export KYMOREM_TOKEN="use-a-long-shared-token"
 ./run-client.sh
 ```
 
-Direct Windows client mode:
+### Direct Windows client mode
 
 ```powershell
 KyMoRem.exe --client --bind 0.0.0.0 --port 54865 --name windows-client
 ```
 
-Secure pulse test:
-
-```bash
-export KYMOREM_TOKEN="use-a-long-shared-token"
-./run-test.sh 127.0.0.1 54865
-```
-
-User daemon on Linux:
-
-```bash
-./install-daemon.sh
-nano ~/.config/kymorem/kymorem.env
-systemctl --user restart kymorem-client.service
-systemctl --user status kymorem-client.service
-```
-
 ## Network Model
 
 ```text
-Windows host                  Linux X11 client
-UI + physical input      ->   X11 input injection
+Windows host                  Linux/Windows client
+UI + physical input      ->   local input injection
 UDP discovery 54866      ->   encrypted LAN announcement
 TCP session 54865        ->   secure input/control channel
-right screen edge        ->   remote control active
+configured screen edge   ->   remote control active
 Ctrl+Esc/client edge     ->   release control
 ```
 
-Pointer routing is proportional. For example, leaving the right edge of the
-host at 75 percent of screen height enters the left edge of the client at 75
-percent of the client display height.
+## Troubleshooting Snapshot
+
+Most operational failures seen during rc2 testing fall into a small set of
+checks:
+
+- Windows 7 receives no events: regenerate the Win7 package from the server,
+  run `Install-Firewall-And-Start.cmd` as Administrator, close older client
+  windows and press `AGGIORNA` on the server.
+- Secure handshake is rejected: host and client are not using the same token or
+  an old client binary is still running. Use the generated `kymorem-token.txt`
+  package, not manual environment variables.
+- Server shows `0 client` but cards are online: UDP discovery may be blocked or
+  stale, while TCP health still works. Use the configured client card, verify
+  `54865/tcp`, then refresh.
+- Layout was changed but routing still follows the old side: save the client
+  slot, press `AGGIORNA`, release remote control with `Ctrl+Esc`, then enter
+  again from the newly configured edge.
+- Infinite-scroll mouse freezes input: install rc2 on host and clients. Wheel
+  bursts are throttled and cleared on release/switch only in the updated path.
+- Linux client is online but does not move: verify X11, `DISPLAY`,
+  `.Xauthority` and `xdotool`; Wayland is not a production injection target.
+
+Full operator FAQ: [FAQ.md](FAQ.md).
 
 ## Repository Layout
 
 ```text
-runtime/python/              Working Windows/Linux RC runtime
+runtime/python/              Working Windows/Linux/Win7 rc2 runtime
 crates/kymorem-protocol/     Rust protocol structs and codec
 crates/kymorem-core/         Rust layout/routing primitives
 crates/kymorem-input/        Rust input abstraction
@@ -111,41 +171,30 @@ install/                     Practical install scripts
 packaging/                   Release packaging recipes
 docs/                        Technical and operational documentation
 docs/localized/              IT, EN and CH quick-start guides
-screenshot.png                README screenshot
-assets/themes/               Theme tokens
+assets/brand/                KMR brand assets
+screenshot.png               README screenshot
 ```
 
 ## Documentation
 
+- [FAQ and troubleshooting](FAQ.md)
+- [Debugging](DEBUGGING.md)
 - [IT quick start](docs/localized/README.it.md)
 - [EN quick start](docs/localized/README.en.md)
 - [CH quick start](docs/localized/README.ch.md)
+- [IT FAQ](docs/localized/FAQ.it.md)
+- [EN FAQ](docs/localized/FAQ.en.md)
+- [CH FAQ](docs/localized/FAQ.ch.md)
+- [Windows 7 onboarding](docs/windows7-client-onboarding.md)
 - [Architecture](docs/architecture.md)
-- [Service Design](docs/service.md)
 - [Configuration](docs/configuration.md)
-- [Networking](docs/networking.md)
-- [Protocol](docs/protocol.md)
-- [Cryptography](docs/cryptography.md)
 - [LAN Discovery](docs/discovery.md)
 - [Operations](docs/operations.md)
-- [Email Relay](docs/email-relay.md)
-- [Localization](docs/localization.md)
-- [Tray Integration](docs/tray.md)
-- [Themes](docs/themes.md)
-- [Debugging](DEBUGGING.md)
-- [FAQ](FAQ.md)
 - [Security](SECURITY.md)
 - [Release Process](docs/release.md)
 
-## Security Notice
-
-KyMoRem controls local input. Deploy it only on networks where device access,
-firewall policy and token distribution are managed. Replace the development
-token before use. KyMoRem refuses the placeholder token unless
-`KYMOREM_ALLOW_DEFAULT_TOKEN=1` is set for diagnostics. Do not expose
-`54865/tcp` or `54866/udp` to untrusted networks. Clipboard file transfer is
-bounded by `clipboard.max_file_bytes` and should be enabled only for trusted
-clients.
+Use KyMoRem only on trusted LANs. Keep `54865/tcp` and `54866/udp` limited to
+private network segments.
 
 ## License
 

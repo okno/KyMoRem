@@ -52,7 +52,7 @@ MAX_FRAMES_PER_SECOND = 1200
 MAX_CLIPBOARD_BYTES = 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
 WHEEL_DELTA_UNIT = 120
-MAX_WHEEL_STEPS_PER_FRAME = 12
+MAX_WHEEL_STEPS_PER_FRAME = 4
 EDGE_REPORT_INTERVAL = 0.18
 DISPLAY_AWAKE_INTERVAL = 20.0
 
@@ -387,7 +387,8 @@ class ClientAgent:
                             "port": self.port,
                         },
                     )
-                    log(f"secure transport established with {addr[0]}:{addr[1]} using {link.suite}")
+                    if str(link.peer.get("role", "")) != "health":
+                        log(f"secure transport established with {addr[0]}:{addr[1]} using {link.suite}")
                     conn.settimeout(None)
                     link.send(
                         frame(
@@ -455,7 +456,9 @@ class ClientAgent:
             time.sleep(5.0)
 
     def dispatch(self, link, kind: str, payload: dict) -> None:
-        if kind == "hello":
+        if kind == "health_probe":
+            link.send(frame("health_ack", name=self.name, os="linux", screen=f"{self.width}x{self.height}"))
+        elif kind == "hello":
             link.send(frame("status", state="connected", name=self.name))
         elif kind == "pulse":
             self.move_pointer(36, 0)
@@ -626,7 +629,7 @@ class ClientAgent:
             if now - last < EDGE_REPORT_INTERVAL:
                 continue
             self.last_edge_report[edge] = now
-            link.send(frame("edge", edge=edge, x=x, y=y))
+            link.send(frame("edge", edge=edge, x=x, y=y, left=0, top=0, width=self.width, height=self.height))
 
     def _verify_tools(self) -> None:
         for tool in ["xdotool", "xdpyinfo"]:
@@ -637,7 +640,7 @@ class ClientAgent:
         session = os.environ.get("XDG_SESSION_TYPE", "").lower()
         if session == "wayland" and os.environ.get("KYMOREM_ALLOW_WAYLAND") != "1":
             raise RuntimeError(
-                "Wayland session detected. KyMoRem v0.2.0-rc1 Linux client targets X11; "
+                "Wayland session detected. KyMoRem v0.2.0-rc2 Linux client targets X11; "
                 "start an X11 session or set KYMOREM_ALLOW_WAYLAND=1 only for diagnostics."
             )
 

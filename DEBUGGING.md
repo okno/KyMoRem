@@ -30,6 +30,12 @@ Read logs:
 Get-Content "$env:APPDATA\KyMoRem\server.log" -Tail 120
 ```
 
+Refresh after layout changes:
+
+```text
+SALVA -> AGGIORNA -> Ctrl+Esc -> enter from the new edge
+```
+
 Reset config:
 
 ```powershell
@@ -129,7 +135,7 @@ xdotool getmouselocation
 ```
 
 If `XDG_SESSION_TYPE` is `wayland`, KyMoRem exits with a clear diagnostic by
-default. Use an X11 session for the v0.2.0-rc1 Linux client.
+default. Use an X11 session for the v0.2.0-rc2 Linux client.
 
 ### Client exits immediately with a Wayland message
 
@@ -182,6 +188,33 @@ VK_RMENU -> Alt_R
 
 If combinations still fail, verify `xdotool` and confirm the session is X11.
 Wayland blocks this class of input injection.
+
+## Windows 7 Client
+
+Start from the server-generated package. Manual token entry is intentionally not
+the normal path.
+
+Generate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-KyMoRemWin7ClientPackage.ps1 -Arch x86 -Name windows7 -Direction down -Zip
+```
+
+On Windows 7, run `Install-Firewall-And-Start.cmd` as Administrator. Then check:
+
+```cmd
+netstat -ano | find "54865"
+type kymorem-win7-client.log
+```
+
+If the console reports `cryptography is required`, close the old window and
+install the rc2 package. If handshake rejection repeats, regenerate the package
+from the server so token files match.
+
+## Infinite Wheel Backlog
+
+rc2 coalesces and caps wheel frames. If an old build already queued too many
+scroll events, release with `Ctrl+Esc` and restart the affected client.
 
 ### Clipboard Sync Does Not Work
 

@@ -75,7 +75,7 @@ tries to install the required rules automatically on first launch. If you prefer
 to prepare the machine in advance, run the client once as administrator with:
 
 ```powershell
-KyMoRem-0.2.0-rc1-windows7-x86-client.exe --install-firewall-rules
+KyMoRem-0.2.0-rc2-windows7-x86-client.exe --install-firewall-rules
 ```
 
 The built-in helper installs inbound rules scoped to the `Private` profile and
@@ -128,4 +128,4 @@ en  English
 ch  Swiss slot
 ```
 
-No other localization files are part of the v0.2.0-rc1 public package.
+No other localization files are part of the v0.2.0-rc2 public package.

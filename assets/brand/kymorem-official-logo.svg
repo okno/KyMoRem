@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">KyMoRem official KMR mark</title>
+  <desc id="desc">Cyber terminal KMR monogram with keyboard frame, pointer route and remote nodes.</desc>
+  <rect width="512" height="512" rx="54" fill="#070b10"/>
+  <rect x="40" y="40" width="432" height="432" rx="40" fill="#101720" stroke="#23f1f4" stroke-width="10"/>
+  <rect x="67" y="67" width="378" height="378" rx="28" fill="#0b1118" stroke="#174b59" stroke-width="3"/>
+  <path d="M116 124h140l40 40h58" fill="none" stroke="#22e6f0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M154 390h184l34-34h58" fill="none" stroke="#22e6f0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="82" y="298" fill="#20e8f1" font-family="Consolas, 'Cascadia Mono', monospace" font-size="126" font-weight="800" letter-spacing="0">KMR</text>
+  <path d="M124 319l25 89 19-35 36 31 22-25-37-32 38-15z" fill="#071016" stroke="#24f2ff" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M205 360c60-2 103-25 143-70 25-28 52-55 92-65" fill="none" stroke="#2efc89" stroke-width="10" stroke-linecap="round" stroke-dasharray="12 14"/>
+  <circle cx="410" cy="160" r="52" fill="none" stroke="#2efc89" stroke-width="10" stroke-dasharray="24 16"/>
+  <circle cx="410" cy="160" r="26" fill="#121827" stroke="#22e6f0" stroke-width="6"/>
+  <circle cx="410" cy="160" r="10" fill="#a56cff"/>
+  <circle cx="408" cy="374" r="36" fill="none" stroke="#2efc89" stroke-width="8"/>
+  <circle cx="408" cy="374" r="12" fill="#2efc89"/>
+  <rect x="202" y="432" width="108" height="10" rx="5" fill="#a56cff"/>
+</svg>
