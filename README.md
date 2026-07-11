@@ -1,7 +1,7 @@
 # KyMoRem
 
 <p align="center">
-  <img src="assets/brand/kymorem-official-logo.png" alt="KyMoRem official KMR logo" width="180">
+  <img src="assets/brand/kymorem-super-route-release.png" alt="KyMoRem v0.2.0-rc2 Super Route Release" width="100%">
 </p>
 
 KyMoRem, Keyboard Mouse Remote, is a LAN-first keyboard and pointer sharing
