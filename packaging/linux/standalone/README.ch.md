@@ -36,6 +36,8 @@ export KYMOREM_TOKEN="eigenes-langes-token"
 
 - X11 ist erforderlich: `echo "$XDG_SESSION_TYPE"` pruefen.
 - `xdotool` ist erforderlich: `command -v xdotool` pruefen.
+- Ohne X11 `Run-KyMoRem-TTY-Client.sh` nutzen: es zeichnet eine Textoberflaeche
+  in der Konsole und unterstuetzt Text-Clipboard ueber OSC52.
 - Wenn Discovery fehlt, manuelle IP setzen und `54865/tcp` pruefen.
 - Nach Layout-Aenderungen auf dem Server: `SALVA`, `AGGIORNA`, `Ctrl+Esc`.
 - Wenn Wheel-Input alles blockiert, Server und Clients auf rc2 aktualisieren.

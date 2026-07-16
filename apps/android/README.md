@@ -1,33 +1,63 @@
-# KyMoRem Android
+# KyMoRem Android Client
 
-Android is a first-class KyMoRem target, but its permissions model is different
-from desktop operating systems.
+The Android app is now a real KyMoRem LAN client surface. It listens on
+`54865/tcp`, accepts the KyMoRem secure PSK/AES-GCM transport and renders a
+remote pointer surface inside the app.
 
-## MVP
+## What Works
 
-The Android MVP should be an app-local remote surface:
+- Manual Android client registration on the KyMoRem server.
+- Secure PSK/HKDF/AES-256-GCM handshake.
+- `health_probe`, `hello`, `keepalive`, `enter`, `move`, `wheel`, `button`,
+  `key`, `release`, `locate_pointer` and text clipboard frames.
+- App-local pointer visualization with edge return reporting.
+- Wheel events are aggregated visually so infinite-scroll bursts do not create
+  a UI backlog.
+- IT, EN and CH strings.
 
-- Discover or manually enter a host.
-- Pair with a token.
-- Receive pointer/key frames.
-- Render a pointer inside the app.
-- Send screen and capability metadata.
+## Current Android Boundary
 
-This proves latency, pairing, reconnects, and protocol compatibility.
+This client controls the KyMoRem Android app surface, not the full Android OS.
+System-wide Android control requires an AccessibilityService or device-owner
+deployment. That is intentionally separate because Android does not allow a
+normal app to inject arbitrary global keyboard and pointer events.
 
-## Later System Control
+## Install
 
-System-wide Android control requires one of:
+Build locally:
 
-- AccessibilityService for gestures and focused text fields.
-- Device-owner mode for managed devices.
-- Optional advanced bridge for power users.
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\android\build-android.ps1
+```
 
-## Suggested Stack
+Install the universal debug APK for quick tests:
 
-- Kotlin.
-- Jetpack Compose.
-- OkHttp or Ktor client for TCP/WebSocket adapter.
-- Shared protocol generated from `docs/protocol.md` or mirrored data classes.
+```powershell
+.\.build-tools-android\android-sdk\platform-tools\adb.exe install -r apps\android\app\build\outputs\apk\debug\app-universal-debug.apk
+```
 
-Keep Android protocol structs names aligned with `kymorem-protocol`.
+For release packaging, use the unsigned APKs/AAB copied to `artifacts`.
+
+## Use
+
+1. Open KyMoRem on Android.
+2. Enter a client name, for example `android-client`.
+3. Enter the server token. It must be the same strong token used by the KyMoRem
+   server.
+4. Keep port `54865`.
+5. Tap `Start`.
+6. On the server, add a client with the Android device IP, port `54865`, and the
+   same name.
+7. Save, press `AGGIORNA`, then route to that edge.
+
+The app status changes from listening to secure handshake to connected.
+
+## Troubleshooting
+
+- Token shorter than 24 characters is refused.
+- The development token is refused.
+- If the server says handshake rejected, regenerate/copy the real server token.
+- If the Android card is offline, check that the phone is on the same LAN and
+  that no Wi-Fi isolation blocks TCP `54865`.
+- If movement enters but global Android apps do not move, that is expected for
+  the app-local client. AccessibilityService is the next system-control layer.

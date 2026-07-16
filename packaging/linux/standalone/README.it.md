@@ -36,6 +36,8 @@ export KYMOREM_TOKEN="token-lungo-condiviso"
 
 - Serve X11: verifica `echo "$XDG_SESSION_TYPE"`.
 - Serve `xdotool`: verifica `command -v xdotool`.
+- Senza X11 usa `Run-KyMoRem-TTY-Client.sh`: disegna una superficie testuale
+  in console e supporta appunti testo tramite OSC52.
 - Se il server non vede discovery, imposta IP manuale e controlla `54865/tcp`.
 - Dopo cambio posizione sul server: `SALVA`, `AGGIORNA`, `Ctrl+Esc`.
 - Se lo scroll blocca tutto, aggiorna server e client a rc2.

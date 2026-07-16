@@ -33,8 +33,8 @@ clients positioned on a shared route map.
   windows7, or server -> windows7 below the host.
 - Windows 7 x86/x64 client packaging with automatic secure token generation,
   sidecar token file, firewall helper, restart script and server registration.
-- Linux client packaging for `/opt/kymorem` or user-level X11 daemon
-  deployment.
+- Linux server UI, Linux X11 client packaging and text-mode TTY client for
+  console-only machines.
 - Safe endpoint switching. The host disconnects the previous active endpoint
   before taking control of another client, preventing stale Linux-to-Win7
   routing locks.
@@ -49,7 +49,7 @@ clients positioned on a shared route map.
 Scaffolded targets remain in the repository for continued work:
 
 - Rust protocol/core/agent workspace.
-- Android app shell.
+- Android app-local client surface.
 - macOS packaging templates.
 - Windows MSI/Inno packaging recipes.
 - Linux DEB and portable packaging recipes.
@@ -166,7 +166,7 @@ crates/kymorem-protocol/     Rust protocol structs and codec
 crates/kymorem-core/         Rust layout/routing primitives
 crates/kymorem-input/        Rust input abstraction
 apps/kymorem-agent/          Rust CLI agent prototype
-apps/android/                Android shell
+apps/android/                Android app-local client
 install/                     Practical install scripts
 packaging/                   Release packaging recipes
 docs/                        Technical and operational documentation
@@ -186,6 +186,9 @@ screenshot.png               README screenshot
 - [EN FAQ](docs/localized/FAQ.en.md)
 - [CH FAQ](docs/localized/FAQ.ch.md)
 - [Windows 7 onboarding](docs/windows7-client-onboarding.md)
+- [Android client](docs/android-client.md)
+- [Linux server and TTY client](docs/linux-server-and-tty.md)
+- [Input queue policy](docs/input-queue-policy.md)
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [LAN Discovery](docs/discovery.md)

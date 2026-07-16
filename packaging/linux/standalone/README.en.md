@@ -36,6 +36,8 @@ export KYMOREM_TOKEN="long-shared-token"
 
 - X11 is required: check `echo "$XDG_SESSION_TYPE"`.
 - `xdotool` is required: check `command -v xdotool`.
+- Without X11 use `Run-KyMoRem-TTY-Client.sh`: it draws a text-mode surface in
+  the console and supports text clipboard through OSC52.
 - If discovery is missing, configure a manual IP and verify `54865/tcp`.
 - After server layout changes: `SALVA`, `AGGIORNA`, `Ctrl+Esc`.
 - If wheel input blocks everything, update server and clients to rc2.

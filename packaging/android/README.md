@@ -2,7 +2,7 @@
 
 Artifacts:
 
-- Universal release APK.
+- Universal APK.
 - ABI split APKs for:
   - `armeabi-v7a` 32-bit ARM
   - `arm64-v8a` 64-bit ARM
@@ -10,11 +10,8 @@ Artifacts:
   - `x86_64` 64-bit Intel emulator/device
 - Android App Bundle `.aab`.
 
-Required tools:
-
-- JDK 17 or newer.
-- Android SDK.
-- Gradle or a generated Gradle wrapper.
+The build script prefers the portable toolchain in `.build-tools-android` when
+present, then falls back to system Java/Gradle.
 
 Build on Windows:
 
@@ -28,5 +25,14 @@ Build on Linux/macOS:
 bash packaging/android/build-android.sh
 ```
 
-The current Android app is an installable MVP shell with IT, EN, and CH
-localizations. The TCP protocol client is the next milestone.
+Outputs are copied to `artifacts` using the configured version.
+
+Quick debug install:
+
+```powershell
+.\.build-tools-android\android-sdk\platform-tools\adb.exe install -r apps\android\app\build\outputs\apk\debug\app-universal-debug.apk
+```
+
+The Android client is an app-local KyMoRem surface with the secure PSK/AES-GCM
+transport. Full system-wide Android control requires a later Accessibility
+service or device-owner mode.

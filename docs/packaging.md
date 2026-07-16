@@ -12,9 +12,9 @@ The build host must generate them once per platform:
 
 ## Why Not Build Everything Here?
 
-The current machine does not have Rust, WiX, Inno Setup, Android SDK, Gradle, or
-macOS packaging tools installed. macOS packages also need macOS tools such as
-`pkgbuild` and `hdiutil`.
+The Android build can use the portable toolchain in `.build-tools-android` when
+present. Other platform scripts still require their native packaging tools.
+macOS packages also need macOS tools such as `pkgbuild` and `hdiutil`.
 
 ## One-Time Tool Install
 
@@ -45,6 +45,7 @@ Android:
 - JDK 17 or newer.
 - Android SDK.
 - Gradle or generated Gradle wrapper.
+- Or the portable `.build-tools-android` bundle already present in this repo.
 
 ## Build Commands
 
@@ -67,6 +68,12 @@ bash packaging/macos/build-macos.sh
 ```
 
 Android:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\android\build-android.ps1
+```
+
+or:
 
 ```bash
 bash packaging/android/build-android.sh

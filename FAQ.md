@@ -17,7 +17,9 @@ Release-grade path:
 - Linux x64 X11 client with `xdotool` input injection.
 - Windows 7 x86/x64 client through the generated client package.
 
-Scaffolded targets remain for Android, macOS and Rust native agents.
+Scaffolded targets remain for macOS and Rust native agents. Android now has an
+app-local LAN client surface; system-wide Android control still requires a
+later AccessibilityService or device-owner layer.
 
 ## Is KyMoRem compatible with Barrier?
 
@@ -157,10 +159,15 @@ rc2 and restart the host app so injected/stale motion filters are active.
 
 ## Infinite scroll freezes everything
 
-This happens when old builds send every high-resolution wheel tick to every
-active client. In rc2 the host coalesces wheel movement, caps pending steps and
-clears queues on release/switch. Install rc2 on host and clients. If a backlog
-was already created, press `Ctrl+Esc` and restart the affected client.
+This happens when old builds send every high-resolution wheel tick to the
+socket and the client must drain the backlog. The current local build adds a
+second network-level queue guard: movement and wheel frames are realtime state,
+so slow clients receive the newest useful state instead of every old tick.
+
+Apply the fix by updating the server first, then all clients. If a backlog was
+already created, press `Ctrl+Esc` and restart the affected client.
+
+Detailed policy: [docs/input-queue-policy.md](docs/input-queue-policy.md).
 
 ## Linux client is online but input does not move
 
