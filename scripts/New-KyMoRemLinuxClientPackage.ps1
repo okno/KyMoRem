@@ -46,7 +46,7 @@ foreach ($file in @("install-daemon.sh", "uninstall-daemon.sh", "run-client.sh",
     Copy-Item -LiteralPath (Join-Path $standalone $file) -Destination (Join-Path $packageDir $file) -Force
 }
 
-foreach ($file in @("kymorem_client.py", "kymorem_common.py", "kymorem_crypto.py", "kymorem_discovery.py")) {
+foreach ($file in @("kymorem_client.py", "kymorem_tty_client.py", "kymorem_common.py", "kymorem_crypto.py", "kymorem_discovery.py")) {
     Copy-Item -LiteralPath (Join-Path $repoRoot "runtime\python\$file") -Destination (Join-Path $binDir $file) -Force
 }
 
@@ -80,6 +80,21 @@ systemctl --user --no-pager -l status kymorem-client.service || true
 "@
 Write-LfFile -Path (Join-Path $packageDir "Install-KyMoRem-Linux-Client.sh") -Content $installWrapper
 
+$runTty = @"
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="`$(cd "`$(dirname "`"${BASH_SOURCE[0]}`")" && pwd)"
+if [ -f "`$DIR/kymorem.env" ]; then
+  set -a
+  . "`$DIR/kymorem.env"
+  set +a
+fi
+PYTHON="`${PYTHON:-python3}"
+exec "`$PYTHON" "`$DIR/bin/kymorem_tty_client.py" --bind "`${KYMOREM_BIND:-0.0.0.0}" --port "`${KYMOREM_PORT:-54865}" --name "`${KYMOREM_NAME:-$Name-tty}"
+"@
+Write-LfFile -Path (Join-Path $packageDir "Run-KyMoRem-TTY-Client.sh") -Content $runTty
+
 $readme = @"
 KyMoRem Linux client package
 
@@ -97,6 +112,14 @@ Check:
   tail -n 80 `$${XDG_RUNTIME_DIR:-/tmp/kymorem-`$(id -u)}/kymorem-client.log
 
 The package contains the server-approved token in kymorem.env. Keep it private.
+
+TTY/no-X11 mode:
+  chmod +x Run-KyMoRem-TTY-Client.sh
+  ./Run-KyMoRem-TTY-Client.sh
+
+The TTY client draws an app-local terminal cursor and handles text clipboard
+through OSC52 when the terminal supports it. Full kernel/global TTY injection
+requires a future uinput backend with elevated permissions.
 "@
 Write-LfFile -Path (Join-Path $packageDir "README-KyMoRem-Linux-Client.txt") -Content $readme
 

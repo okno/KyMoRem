@@ -1,9 +1,15 @@
 <resources>
     <string name="app_name">KyMoRem</string>
-    <string name="summary">Share mouse and keyboard across devices on the same network.</string>
-    <string name="host_hint">Host address</string>
+    <string name="summary">LAN client surface for KyMoRem mouse, keyboard, wheel and clipboard frames.</string>
+    <string name="name_hint">Client name</string>
+    <string name="port_hint">Listen port</string>
     <string name="token_hint">Pairing token</string>
-    <string name="connect">Connect</string>
-    <string name="mvp_status">Android MVP shell ready. Network protocol wiring comes next.</string>
-    <string name="pairing_placeholder">Pairing UI ready. TCP client implementation is the next milestone.</string>
+    <string name="start_listener">Start</string>
+    <string name="stop_listener">Stop</string>
+    <string name="status_idle">Idle. Start listener, then configure this Android IP on the KyMoRem server.</string>
+    <string name="status_bad_token">Set a real KyMoRem token with at least 24 characters.</string>
+    <string name="status_listening">Listening on 0.0.0.0:%1$d</string>
+    <string name="status_handshake">Secure handshake in progress...</string>
+    <string name="status_connected">Connected to KyMoRem server.</string>
+    <string name="status_error">Error:</string>
 </resources>

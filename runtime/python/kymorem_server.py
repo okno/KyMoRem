@@ -399,6 +399,12 @@ WHEEL_FLUSH_INTERVAL = 1 / 30
 MAX_DISCRETE_INPUT_BURST = 96
 MAX_WHEEL_STEPS_PER_FLUSH = 3
 MAX_PENDING_WHEEL_STEPS = 6
+NETWORK_FLUSH_INTERVAL = 1 / 60
+NETWORK_WHEEL_FLUSH_INTERVAL = 1 / 20
+MAX_NETWORK_WHEEL_STEPS = 4
+MAX_PENDING_NETWORK_WHEEL_STEPS = 4
+MAX_NETWORK_QUEUE = 96
+NETWORK_SEND_TIMEOUT = 0.75
 WHEEL_DELTA_UNIT = 120
 PENDING_EDGE_TAKE_TTL = 2.0
 PENDING_MANUAL_TAKE_TTL = 15.0
@@ -893,11 +899,22 @@ class RemoteLink:
         self.secure = None
         self.lock = threading.Lock()
         self.send_lock = threading.Lock()
+        self.net_lock = threading.Lock()
+        self.send_queue: queue.Queue = queue.Queue(maxsize=MAX_NETWORK_QUEUE)
+        self.pending_net_move_dx = 0
+        self.pending_net_move_dy = 0
+        self.pending_net_wheel_dx = 0
+        self.pending_net_wheel_dy = 0
+        self.last_network_wheel_flush_ts = 0.0
+        self.last_network_drop_log = 0.0
         self.connected = False
         self.connecting = False
         self.client_info: dict = {}
         self.endpoint: tuple[str, int] | None = None
         self.connect_generation = 0
+        self.running = True
+        self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
+        self.sender_thread.start()
 
     def connect(self, host: str, port: int, token: str, identity: dict) -> None:
         self.disconnect()
@@ -973,6 +990,7 @@ class RemoteLink:
             self.client_info = {}
             self.endpoint = None
             self.connect_generation += 1
+        self._clear_network_backlog()
         if sock:
             try:
                 if secure:
@@ -982,16 +1000,135 @@ class RemoteLink:
                 pass
 
     def send(self, kind: str, **payload) -> None:
+        if kind == "move":
+            with self.net_lock:
+                self.pending_net_move_dx += int(payload.get("dx", 0))
+                self.pending_net_move_dy += int(payload.get("dy", 0))
+            return
+        if kind == "wheel":
+            with self.net_lock:
+                self.pending_net_wheel_dx = self._cap_network_wheel(
+                    self.pending_net_wheel_dx + int(payload.get("dx", 0))
+                )
+                self.pending_net_wheel_dy = self._cap_network_wheel(
+                    self.pending_net_wheel_dy + int(payload.get("dy", 0))
+                )
+            return
+        item = frame(kind, **payload)
+        reliable = kind not in {"keepalive", "locate_pointer"}
+        if reliable:
+            try:
+                self.send_queue.put(item, timeout=0.25)
+            except queue.Full:
+                self._drop_queued_nonessential()
+                try:
+                    self.send_queue.put(item, timeout=0.25)
+                except queue.Full:
+                    self._log_network_drop("Coda rete piena: frame affidabile non inviato.")
+        else:
+            try:
+                self.send_queue.put_nowait(item)
+            except queue.Full:
+                self._log_network_drop("Coda rete piena: frame realtime scartato.")
+
+    def _send_immediate(self, message: dict) -> None:
         with self.lock:
             secure = self.secure
+            sock = self.sock
         if not secure:
             return
         try:
             with self.send_lock:
-                secure.send(frame(kind, **payload))
+                old_timeout = sock.gettimeout() if sock else None
+                if sock:
+                    sock.settimeout(NETWORK_SEND_TIMEOUT)
+                secure.send(message)
+                if sock:
+                    sock.settimeout(old_timeout)
         except Exception as exc:
             self.events.put(("log", f"Invio fallito: {exc}"))
             self.disconnect()
+
+    def _sender_loop(self) -> None:
+        next_flush = time.monotonic()
+        while self.running:
+            now = time.monotonic()
+            if now >= next_flush:
+                self._flush_realtime_network_inputs()
+                next_flush = now + NETWORK_FLUSH_INTERVAL
+            try:
+                message = self.send_queue.get(timeout=0.01)
+            except queue.Empty:
+                continue
+            self._send_immediate(message)
+
+    def _cap_network_wheel(self, value: int) -> int:
+        limit = MAX_PENDING_NETWORK_WHEEL_STEPS * WHEEL_DELTA_UNIT
+        return max(-limit, min(limit, int(value)))
+
+    def _take_network_wheel_batch(self, attr: str) -> int:
+        pending = int(getattr(self, attr))
+        steps = int(pending / WHEEL_DELTA_UNIT)
+        if steps == 0:
+            return 0
+        steps = max(-MAX_NETWORK_WHEEL_STEPS, min(MAX_NETWORK_WHEEL_STEPS, steps))
+        delta = steps * WHEEL_DELTA_UNIT
+        setattr(self, attr, pending - delta)
+        return delta
+
+    def _flush_realtime_network_inputs(self) -> None:
+        with self.lock:
+            if not self.connected:
+                self._clear_network_backlog()
+                return
+        now = time.monotonic()
+        include_wheel = now - self.last_network_wheel_flush_ts >= NETWORK_WHEEL_FLUSH_INTERVAL
+        with self.net_lock:
+            dx = self.pending_net_move_dx
+            dy = self.pending_net_move_dy
+            self.pending_net_move_dx = 0
+            self.pending_net_move_dy = 0
+            wheel_dx = self._take_network_wheel_batch("pending_net_wheel_dx") if include_wheel else 0
+            wheel_dy = self._take_network_wheel_batch("pending_net_wheel_dy") if include_wheel else 0
+        if dx or dy:
+            self._send_immediate(frame("move", dx=dx, dy=dy))
+        if wheel_dx or wheel_dy:
+            self._send_immediate(frame("wheel", dx=wheel_dx, dy=wheel_dy))
+            self.last_network_wheel_flush_ts = now
+
+    def _clear_network_backlog(self) -> None:
+        with self.net_lock:
+            self.pending_net_move_dx = 0
+            self.pending_net_move_dy = 0
+            self.pending_net_wheel_dx = 0
+            self.pending_net_wheel_dy = 0
+        while True:
+            try:
+                self.send_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def _drop_queued_nonessential(self) -> None:
+        kept: list[dict] = []
+        while True:
+            try:
+                message = self.send_queue.get_nowait()
+            except queue.Empty:
+                break
+            if message.get("type") in {"keepalive", "locate_pointer"}:
+                continue
+            kept.append(message)
+        for message in kept[-MAX_NETWORK_QUEUE // 2:]:
+            try:
+                self.send_queue.put_nowait(message)
+            except queue.Full:
+                break
+
+    def _log_network_drop(self, message: str) -> None:
+        now = time.monotonic()
+        if now - self.last_network_drop_log > 1.0:
+            self.last_network_drop_log = now
+            self.events.put(("log", message))
 
 
 class ThemedSelect(ttk.Combobox):
@@ -1304,7 +1441,7 @@ class ControlEngine:
         )
 
     def stop(self) -> None:
-        self._show_host_cursor()
+        self._show_host_cursor(force=True)
         self.running = False
         if self.hook_thread_id:
             user32.PostThreadMessageW(self.hook_thread_id, WM_QUIT, 0, 0)
@@ -1312,17 +1449,28 @@ class ControlEngine:
     def _hide_host_cursor(self) -> None:
         if self.cursor_hidden:
             return
-        for _ in range(16):
+        for _ in range(128):
             if user32.ShowCursor(False) < 0:
                 break
         self.cursor_hidden = True
 
-    def _show_host_cursor(self) -> None:
-        if not self.cursor_hidden:
+    def _show_host_cursor(self, *, force: bool = False) -> None:
+        if not self.cursor_hidden and not force:
             return
-        for _ in range(16):
-            if user32.ShowCursor(True) >= 0:
+        count = 0
+        for _ in range(128):
+            try:
+                count = user32.ShowCursor(True)
+            except OSError:
                 break
+            if count >= 0:
+                break
+        if force:
+            while count > 0:
+                try:
+                    count = user32.ShowCursor(False)
+                except OSError:
+                    break
         self.cursor_hidden = False
 
     def _capture_edge_exit(self, direction: str, x: int, y: int) -> dict:
@@ -1406,7 +1554,7 @@ class ControlEngine:
                     set_cursor(self.left + self.w // 2, self.top + max(0, self.h - RELEASE_EDGE_MARGIN))
                 else:
                     set_cursor(self.left + max(0, self.w - RELEASE_EDGE_MARGIN), self.top + self.h // 2)
-                self._show_host_cursor()
+                self._show_host_cursor(force=True)
             if notify_client:
                 self.link.send("release")
             self.events.put(("remote", False))
@@ -1505,6 +1653,8 @@ class KyMoRemApp:
         self.client_health: dict[str, dict] = {}
         self.last_client_edge_log: dict[str, float] = {}
         self.log_history: list[str] = []
+        self.last_cursor_recovery_ts = 0.0
+        self.cursor_recovery_bound = False
         self.control_center = None
         self.events: queue.Queue = queue.Queue()
         self.link = RemoteLink(self.events)
@@ -1540,6 +1690,7 @@ class KyMoRemApp:
         self.root.protocol("WM_DELETE_WINDOW", self._hide_to_tray)
         self._style()
         self._build()
+        self._bind_cursor_recovery()
         self._start_tray()
         self._tick()
         if self.server_active:
@@ -1639,6 +1790,35 @@ class KyMoRemApp:
             selectforeground=[("readonly", CYBER["text"])],
             arrowcolor=[("readonly", CYBER["cyan"]), ("active", CYBER["yellow"])],
         )
+
+    def _bind_cursor_recovery(self) -> None:
+        if self.cursor_recovery_bound:
+            return
+        self.cursor_recovery_bound = True
+        self.root.bind("<Enter>", self._recover_ui_cursor, add="+")
+        self.root.bind("<FocusIn>", self._recover_ui_cursor, add="+")
+        self.root.bind_all("<Motion>", self._recover_ui_cursor, add="+")
+
+    def _recover_ui_cursor(self, event=None) -> None:
+        if getattr(self.engine, "remote", False):
+            return
+        now = time.monotonic()
+        if now - self.last_cursor_recovery_ts < 0.25:
+            return
+        if event is not None:
+            try:
+                x = int(getattr(event, "x_root", self.root.winfo_pointerx()))
+                y = int(getattr(event, "y_root", self.root.winfo_pointery()))
+            except (tk.TclError, ValueError):
+                x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
+            if not self._pointer_inside_ui(x, y):
+                return
+        self.last_cursor_recovery_ts = now
+        try:
+            self.root.configure(cursor="")
+        except tk.TclError:
+            pass
+        self.engine._show_host_cursor(force=True)
 
     def _build(self) -> None:
         if self.server_active:
@@ -3689,7 +3869,7 @@ class KyMoRemApp:
                 if self.engine.remote:
                     self.engine.release()
                 else:
-                    self.engine._show_host_cursor()
+                    self.engine._show_host_cursor(force=True)
                 self._update_discovery_badge()
                 if self.server_active:
                     self._set_status(self.text["status_disconnected"], "#ff5c7a")

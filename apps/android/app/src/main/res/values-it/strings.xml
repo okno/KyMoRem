@@ -1,9 +1,15 @@
 <resources>
     <string name="app_name">KyMoRem</string>
-    <string name="summary">Condividi mouse e tastiera tra dispositivi sulla stessa rete.</string>
-    <string name="host_hint">Indirizzo host</string>
+    <string name="summary">Superficie client LAN per mouse, tastiera, rotella e appunti KyMoRem.</string>
+    <string name="name_hint">Nome client</string>
+    <string name="port_hint">Porta di ascolto</string>
     <string name="token_hint">Token di abbinamento</string>
-    <string name="connect">Connetti</string>
-    <string name="mvp_status">Base Android pronta. Il collegamento al protocollo di rete e il prossimo passo.</string>
-    <string name="pairing_placeholder">Interfaccia di abbinamento pronta. Il client TCP e il prossimo milestone.</string>
+    <string name="start_listener">Avvia</string>
+    <string name="stop_listener">Ferma</string>
+    <string name="status_idle">Fermo. Avvia il listener, poi configura questo IP Android sul server KyMoRem.</string>
+    <string name="status_bad_token">Imposta un token KyMoRem reale di almeno 24 caratteri.</string>
+    <string name="status_listening">In ascolto su 0.0.0.0:%1$d</string>
+    <string name="status_handshake">Handshake sicuro in corso...</string>
+    <string name="status_connected">Connesso al server KyMoRem.</string>
+    <string name="status_error">Errore:</string>
 </resources>

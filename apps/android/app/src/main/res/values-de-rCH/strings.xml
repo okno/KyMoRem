@@ -1,9 +1,15 @@
 <resources>
     <string name="app_name">KyMoRem</string>
-    <string name="summary">Tastatur und Maus im lokalen Netzwerk gemeinsam nutzen.</string>
-    <string name="host_hint">Host-Adresse</string>
+    <string name="summary">LAN-Client-Oberflaeche fuer KyMoRem Maus, Tastatur, Wheel und Clipboard.</string>
+    <string name="name_hint">Client-Name</string>
+    <string name="port_hint">Listen-Port</string>
     <string name="token_hint">Pairing-Token</string>
-    <string name="connect">Verbinden</string>
-    <string name="mvp_status">Android MVP Shell bereit. Die Protokollanbindung ist der naechste Meilenstein.</string>
-    <string name="pairing_placeholder">Pairing UI bereit. Die TCP Client-Implementierung folgt als naechster Schritt.</string>
+    <string name="start_listener">Start</string>
+    <string name="stop_listener">Stop</string>
+    <string name="status_idle">Idle. Listener starten, danach diese Android-IP im KyMoRem-Server konfigurieren.</string>
+    <string name="status_bad_token">Einen echten KyMoRem-Token mit mindestens 24 Zeichen setzen.</string>
+    <string name="status_listening">Lauscht auf 0.0.0.0:%1$d</string>
+    <string name="status_handshake">Sicherer Handshake laeuft...</string>
+    <string name="status_connected">Mit KyMoRem-Server verbunden.</string>
+    <string name="status_error">Fehler:</string>
 </resources>

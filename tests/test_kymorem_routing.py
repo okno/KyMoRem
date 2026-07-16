@@ -198,6 +198,62 @@ class RoutingLayoutTests(unittest.TestCase):
 
         self.assertEqual(sent[-1], ("wheel", {"dx": 0, "dy": server.WHEEL_DELTA_UNIT}))
 
+    def test_remote_link_caps_realtime_network_wheel_backlog(self) -> None:
+        import kymorem_server as server
+
+        link = server.RemoteLink.__new__(server.RemoteLink)
+        link.events = queue.Queue()
+        link.lock = threading.Lock()
+        link.net_lock = threading.Lock()
+        link.send_queue = queue.Queue(maxsize=server.MAX_NETWORK_QUEUE)
+        link.pending_net_move_dx = 0
+        link.pending_net_move_dy = 0
+        link.pending_net_wheel_dx = 0
+        link.pending_net_wheel_dy = 0
+        link.last_network_wheel_flush_ts = 0.0
+        link.last_network_drop_log = 0.0
+        link.connected = True
+
+        for _ in range(2000):
+            link.send("wheel", dy=server.WHEEL_DELTA_UNIT)
+
+        self.assertLessEqual(
+            link.pending_net_wheel_dy,
+            server.MAX_PENDING_NETWORK_WHEEL_STEPS * server.WHEEL_DELTA_UNIT,
+        )
+
+    def test_remote_link_flushes_latest_realtime_frames_without_queue_growth(self) -> None:
+        import kymorem_server as server
+
+        sent: list[dict] = []
+        link = server.RemoteLink.__new__(server.RemoteLink)
+        link.events = queue.Queue()
+        link.lock = threading.Lock()
+        link.net_lock = threading.Lock()
+        link.send_queue = queue.Queue(maxsize=server.MAX_NETWORK_QUEUE)
+        link.pending_net_move_dx = 0
+        link.pending_net_move_dy = 0
+        link.pending_net_wheel_dx = 0
+        link.pending_net_wheel_dy = 0
+        link.last_network_wheel_flush_ts = 0.0
+        link.connected = True
+        link._send_immediate = lambda message: sent.append(message)
+
+        for _ in range(100):
+            link.send("move", dx=1, dy=2)
+            link.send("wheel", dy=server.WHEEL_DELTA_UNIT)
+
+        with mock.patch.object(server.time, "monotonic", return_value=10.0):
+            link._flush_realtime_network_inputs()
+
+        self.assertTrue(link.send_queue.empty())
+        self.assertEqual([item["type"] for item in sent], ["move", "wheel"])
+        self.assertEqual(sent[0]["payload"], {"dx": 100, "dy": 200})
+        self.assertEqual(
+            sent[1]["payload"]["dy"],
+            server.MAX_NETWORK_WHEEL_STEPS * server.WHEEL_DELTA_UNIT,
+        )
+
     def test_remote_mode_hides_and_restores_host_cursor(self) -> None:
         import kymorem_server as server
 
@@ -218,6 +274,29 @@ class RoutingLayoutTests(unittest.TestCase):
             self.assertFalse(engine.cursor_hidden)
 
         self.assertEqual(calls, [False, True])
+
+    def test_forced_cursor_recovery_does_not_accumulate_visible_count(self) -> None:
+        import kymorem_server as server
+
+        calls: list[bool] = []
+        display_count = 0
+
+        def fake_show_cursor(show: bool) -> int:
+            nonlocal display_count
+            calls.append(show)
+            display_count += 1 if show else -1
+            return display_count
+
+        engine = server.ControlEngine.__new__(server.ControlEngine)
+        engine.cursor_hidden = False
+
+        with mock.patch.object(server.user32, "ShowCursor", side_effect=fake_show_cursor):
+            engine._show_host_cursor(force=True)
+            engine._show_host_cursor(force=True)
+
+        self.assertFalse(engine.cursor_hidden)
+        self.assertEqual(display_count, 0)
+        self.assertEqual(calls, [True, False, True, False])
 
     def test_remote_mouse_move_is_consumed_and_sent_as_delta(self) -> None:
         import kymorem_server as server
